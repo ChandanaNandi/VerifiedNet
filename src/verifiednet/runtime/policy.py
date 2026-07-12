@@ -109,18 +109,72 @@ class CommandPolicy:
                 _assert_show_command(command, self.forbidden_tokens)
 
 
+#: Parameter fragments permitted only in explicitly-named positions of a shape.
+_IPV4 = r"(?:\d{1,3}\.){3}\d{1,3}"
+_ASN = r"\d{1,10}"
+
+
+@dataclass(frozen=True)
+class MutationCommandShape:
+    """A named, complete vtysh ``-c`` command sequence.
+
+    ``commands`` is the *exact* ordered set of ``-c`` command patterns for this
+    shape. A candidate matches only when it has the identical command count and
+    every command fully matches (``re.fullmatch``) the pattern in the same
+    position. Patterns are fully-literal except for explicitly-permitted
+    parameter positions (an ASN or an IPv4 address). There are no partial
+    prefixes: a lone ``configure terminal`` cannot match a three-command shape,
+    and ``router bgp`` without an ASN cannot match at all.
+    """
+
+    name: str
+    commands: tuple[re.Pattern[str], ...]
+
+    def matches(self, normalized_commands: Sequence[str]) -> bool:
+        if len(normalized_commands) != len(self.commands):
+            return False
+        return all(
+            pattern.fullmatch(command) is not None
+            for pattern, command in zip(self.commands, normalized_commands, strict=True)
+        )
+
+
+def bgp_remote_as_mutation_shapes() -> tuple[MutationCommandShape, ...]:
+    """The only two mutation shapes the BGP remote-AS scenario is permitted.
+
+    Provenance: the vtysh grammar mirrors sonic-troubleshooting-agent
+    ``faults/bgp_asn_mismatch.py`` (MIT, commit eb4c818), re-targeted at plain
+    FRR and tightened to exact, complete shapes (Gate 3 freeze-check correction 5).
+    """
+    return (
+        MutationCommandShape(
+            name="set_remote_as",
+            commands=(
+                re.compile(r"configure terminal"),
+                re.compile(rf"router bgp {_ASN}"),
+                re.compile(rf"neighbor {_IPV4} remote-as {_ASN}"),
+            ),
+        ),
+        MutationCommandShape(
+            name="clear_bgp",
+            commands=(re.compile(rf"clear bgp {_IPV4}"),),
+        ),
+    )
+
+
 @dataclass(frozen=True)
 class MutationCommandPolicy:
-    """Mutation-path command policy: binary allow-list plus vtysh prefix templates.
+    """Mutation-path command policy: binary allow-list plus exact vtysh shapes.
 
-    Each entry in ``allowed_vtysh_prefixes`` is an ordered template of allowed
-    ``-c`` command prefixes. The argv's sequence of ``-c`` values matches a
-    template when it has the same count or fewer commands and each command
-    ``startswith`` the corresponding template prefix, in order.
+    A vtysh argv is permitted only when its full ``-c`` command sequence matches
+    exactly one :class:`MutationCommandShape` — identical command count, identical
+    ordering, each command fully matching its position's pattern. Parameters may
+    vary only in the shape's explicitly-permitted positions (ASN, peer address).
+    Partial prefixes and truncated sequences are rejected.
     """
 
     allowed_binaries: frozenset[str]
-    allowed_vtysh_prefixes: tuple[tuple[str, ...], ...] = ()
+    allowed_shapes: tuple[MutationCommandShape, ...] = ()
 
     def check(self, argv: Sequence[str]) -> None:
         """Raise ``PolicyViolationError`` unless *argv* is allowed. Executes nothing."""
@@ -133,14 +187,13 @@ class MutationCommandPolicy:
             commands = _vtysh_commands(argv)
             if not commands:
                 raise PolicyViolationError("vtysh without -c commands (interactive shell) denied")
-            for template in self.allowed_vtysh_prefixes:
-                if len(commands) <= len(template) and all(
-                    command.startswith(prefix)
-                    for command, prefix in zip(commands, template, strict=False)
-                ):
+            normalized = tuple(_normalize(command) for command in commands)
+            for shape in self.allowed_shapes:
+                if shape.matches(normalized):
                     return
             raise PolicyViolationError(
-                f"vtysh command sequence matches no allowed mutation template: {commands!r}"
+                "vtysh command sequence matches no allowed mutation shape "
+                f"(exact count and ordering required): {commands!r}"
             )
 
 

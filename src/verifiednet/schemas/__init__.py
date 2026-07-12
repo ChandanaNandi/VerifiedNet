@@ -5,6 +5,7 @@ from verifiednet.schemas.evidence import (
     EvidenceRecord,
     EvidenceSource,
     Phase,
+    PhaseField,
     SealedBundleViolation,
 )
 from verifiednet.schemas.fault import FaultInjection
@@ -48,6 +49,7 @@ __all__ = [
     "LinkSpec",
     "NodeSpec",
     "Phase",
+    "PhaseField",
     "Predicate",
     "ProvenanceInfo",
     "RejectionCode",

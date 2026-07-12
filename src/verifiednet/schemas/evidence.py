@@ -8,13 +8,39 @@ sealing).
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from enum import StrEnum
+from typing import Annotated, Any, Literal
 
-from pydantic import Field
+from pydantic import BeforeValidator, Field
 
 from verifiednet.schemas.base import StrictModel, UtcDatetime
 
-Phase = Literal["baseline", "onset", "recovery", "precondition"]
+
+class Phase(StrEnum):
+    """Canonical incident phase. The single source of phase identity.
+
+    A ``StrEnum`` so it serializes to its lowercase value everywhere (canonical
+    JSON emits ``"onset"`` etc.). Schema fields use :data:`PhaseField`, which
+    accepts either a ``Phase`` member or its string value and always stores the
+    canonical enum member (Gate 3 freeze-check correction 4).
+    """
+
+    BASELINE = "baseline"
+    ONSET = "onset"
+    RECOVERY = "recovery"
+    PRECONDITION = "precondition"
+
+
+def _coerce_phase(value: object) -> Phase:
+    if isinstance(value, Phase):
+        return value
+    if isinstance(value, str):
+        return Phase(value)
+    raise TypeError(f"phase must be a Phase or str, got {type(value)!r}")
+
+
+#: Schema field type: coerces a string value to the canonical ``Phase`` enum.
+PhaseField = Annotated[Phase, BeforeValidator(_coerce_phase)]
 
 
 class EvidenceSource(StrictModel):
@@ -28,7 +54,7 @@ class EvidenceSource(StrictModel):
 class EvidenceRecord(StrictModel):
     schema_version: Literal[1] = 1
     evidence_id: str  # content-derived: "ev-<sha256[:16]>"
-    phase: Phase
+    phase: PhaseField
     source: EvidenceSource
     raw_sha256: str
     raw_payload: str  # verbatim stdout/output (bounded upstream)
@@ -40,7 +66,7 @@ class EvidenceRecord(StrictModel):
 class EvidenceBundle(StrictModel):
     schema_version: Literal[1] = 1
     bundle_id: str
-    phase: Phase
+    phase: PhaseField
     records: tuple[EvidenceRecord, ...] = Field(default_factory=tuple)
     sealed: bool = False
 

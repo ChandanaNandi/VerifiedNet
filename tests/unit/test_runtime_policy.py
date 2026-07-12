@@ -5,7 +5,12 @@ from __future__ import annotations
 import pytest
 
 from verifiednet.common.errors import PolicyViolationError
-from verifiednet.runtime import CommandPolicy, MutationCommandPolicy, TargetPolicy
+from verifiednet.runtime import (
+    CommandPolicy,
+    MutationCommandPolicy,
+    TargetPolicy,
+    bgp_remote_as_mutation_shapes,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -19,10 +24,7 @@ def read_policy() -> CommandPolicy:
 def mutation_policy() -> MutationCommandPolicy:
     return MutationCommandPolicy(
         allowed_binaries=frozenset({"vtysh"}),
-        allowed_vtysh_prefixes=(
-            ("configure terminal", "router bgp ", "neighbor "),
-            ("clear bgp ",),
-        ),
+        allowed_shapes=bgp_remote_as_mutation_shapes(),
     )
 
 
@@ -100,9 +102,62 @@ class TestMutationCommandPolicy:
     def test_allows_clear_bgp(self, mutation_policy: MutationCommandPolicy) -> None:
         mutation_policy.check(["vtysh", "-c", "clear bgp 172.30.0.2"])
 
-    def test_denies_show_not_in_templates(self, mutation_policy: MutationCommandPolicy) -> None:
-        with pytest.raises(PolicyViolationError, match="template"):
+    def test_denies_show_not_in_shapes(self, mutation_policy: MutationCommandPolicy) -> None:
+        with pytest.raises(PolicyViolationError, match="shape"):
             mutation_policy.check(["vtysh", "-c", "show ip bgp summary json"])
+
+    def test_denies_partial_prefix_configure_only(
+        self, mutation_policy: MutationCommandPolicy
+    ) -> None:
+        # A lone "configure terminal" must NOT match the 3-command set_remote_as shape.
+        with pytest.raises(PolicyViolationError, match="shape"):
+            mutation_policy.check(["vtysh", "-c", "configure terminal"])
+
+    def test_denies_missing_leading_command(
+        self, mutation_policy: MutationCommandPolicy
+    ) -> None:
+        # Correct tail but missing "configure terminal": wrong count/order.
+        with pytest.raises(PolicyViolationError, match="shape"):
+            mutation_policy.check(
+                [
+                    "vtysh",
+                    "-c",
+                    "router bgp 65001",
+                    "-c",
+                    "neighbor 172.30.0.2 remote-as 65999",
+                ]
+            )
+
+    def test_denies_router_bgp_without_asn(
+        self, mutation_policy: MutationCommandPolicy
+    ) -> None:
+        # Parameter position must be filled: "router bgp" without an ASN is denied.
+        with pytest.raises(PolicyViolationError, match="shape"):
+            mutation_policy.check(
+                [
+                    "vtysh",
+                    "-c",
+                    "configure terminal",
+                    "-c",
+                    "router bgp",
+                    "-c",
+                    "neighbor 172.30.0.2 remote-as 65999",
+                ]
+            )
+
+    def test_denies_reordered_sequence(self, mutation_policy: MutationCommandPolicy) -> None:
+        with pytest.raises(PolicyViolationError, match="shape"):
+            mutation_policy.check(
+                [
+                    "vtysh",
+                    "-c",
+                    "router bgp 65001",
+                    "-c",
+                    "configure terminal",
+                    "-c",
+                    "neighbor 172.30.0.2 remote-as 65999",
+                ]
+            )
 
     @pytest.mark.parametrize("argv", [["rm", "-rf", "/"], ["reboot"]])
     def test_denies_unlisted_binaries(
@@ -115,10 +170,10 @@ class TestMutationCommandPolicy:
         with pytest.raises(PolicyViolationError, match="metacharacter"):
             mutation_policy.check(["vtysh", "-c", "clear bgp 172.30.0.2; rm -rf /"])
 
-    def test_denies_sequence_longer_than_template(
+    def test_denies_sequence_longer_than_shape(
         self, mutation_policy: MutationCommandPolicy
     ) -> None:
-        with pytest.raises(PolicyViolationError, match="template"):
+        with pytest.raises(PolicyViolationError, match="shape"):
             mutation_policy.check(
                 [
                     "vtysh",

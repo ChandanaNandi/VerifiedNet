@@ -8,7 +8,13 @@ specifically, so mutation capability must never leak through the read path.
 from __future__ import annotations
 
 from verifiednet.runtime.mutation import MutationExecutor
-from verifiednet.runtime.policy import CommandPolicy, MutationCommandPolicy, TargetPolicy
+from verifiednet.runtime.policy import (
+    CommandPolicy,
+    MutationCommandPolicy,
+    MutationCommandShape,
+    TargetPolicy,
+    bgp_remote_as_mutation_shapes,
+)
 from verifiednet.runtime.process import ProcessRunner, RawResult, default_runner
 from verifiednet.runtime.readonly import ReadOnlyExecutor
 from verifiednet.runtime.results import ExecResult, ExecStatus
@@ -26,6 +32,7 @@ __all__ = [
     "FileTranscript",
     "InMemoryTranscript",
     "MutationCommandPolicy",
+    "MutationCommandShape",
     "MutationExecutor",
     "ProcessRunner",
     "RawResult",
@@ -33,5 +40,6 @@ __all__ = [
     "TargetPolicy",
     "TranscriptEntry",
     "TranscriptWriter",
+    "bgp_remote_as_mutation_shapes",
     "default_runner",
 ]

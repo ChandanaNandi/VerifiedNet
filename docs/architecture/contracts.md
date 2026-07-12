@@ -26,6 +26,11 @@ BenchmarkRun, EvaluationReport. RecoveryResult intentionally does not exist.
 
 `ExecResult` (+`ExecStatus`) is a runtime-owned serializable model, not a core schema.
 
+`Phase` is a canonical `StrEnum` (baseline/onset/recovery/precondition); schema
+phase fields coerce a string value to the enum via a `BeforeValidator` and always
+store the enum member (freeze-check correction 4). `evidence_provider` is invoked
+with `Phase` members, never raw strings.
+
 ## Behavioral interfaces (in their owning packages — Gate 2.5 W2)
 
 | Interface | Package | Methods |

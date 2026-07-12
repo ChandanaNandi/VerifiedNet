@@ -21,6 +21,7 @@ from verifiednet.runtime import (
     RawResult,
     ReadOnlyExecutor,
     TargetPolicy,
+    bgp_remote_as_mutation_shapes,
     default_runner,
 )
 
@@ -61,7 +62,7 @@ def make_mutation(
         runner=runner,
         command_policy=MutationCommandPolicy(
             allowed_binaries=frozenset({"vtysh"}),
-            allowed_vtysh_prefixes=(("clear bgp ",),),
+            allowed_shapes=bgp_remote_as_mutation_shapes(),
         ),
         target_policy=TargetPolicy(allowed_targets=frozenset({"router_a"})),
         transcript=transcript,

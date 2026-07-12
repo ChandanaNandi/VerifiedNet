@@ -14,7 +14,7 @@ from typing import Literal
 from pydantic import Field
 
 from verifiednet.schemas.base import StrictModel, UtcDatetime
-from verifiednet.schemas.evidence import Phase
+from verifiednet.schemas.evidence import PhaseField
 
 
 class Verdict(StrEnum):
@@ -42,7 +42,7 @@ class VerificationCheck(StrictModel):
     metric: str  # normalized evidence key, e.g. "bgp.peer.state"
     predicate: Predicate
     expected: tuple[str, ...] = Field(default_factory=tuple)  # values; empty for ANY
-    phase: Phase
+    phase: PhaseField
     require_trusted: bool = True
 
 
@@ -50,7 +50,7 @@ class VerificationResult(StrictModel):
     schema_version: Literal[1] = 1
     check_id: str
     verdict: Verdict
-    phase: Phase
+    phase: PhaseField
     evidence_ids: tuple[str, ...] = Field(default_factory=tuple)
     observed: tuple[str, ...] = Field(default_factory=tuple)
     detail: str = ""

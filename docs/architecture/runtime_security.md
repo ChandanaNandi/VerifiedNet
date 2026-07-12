@@ -11,8 +11,10 @@
 2. **Policies** (`runtime/policy.py`) — `CommandPolicy` (read): binary allow-list,
    vtysh show-only rule, forbidden-token ban, shell-metacharacter rejection
    (adapted from NeuroNOC's `_assert_show_command`). `MutationCommandPolicy`:
-   explicit vtysh command-sequence templates (remote-as revert, clear bgp) —
-   everything else denied. `TargetPolicy`: allowed targets come from topology.
+   named, complete vtysh command *shapes* (`set_remote_as`, `clear_bgp`) matched
+   by exact command count, exact ordering, and per-position regex; parameters vary
+   only in permitted positions (ASN, peer IP); partial prefixes and extra commands
+   denied. `TargetPolicy`: allowed targets come from topology.
 3. **Two executors** (separate modules, AST-relevant):
    - `ReadOnlyExecutor` (`runtime/readonly.py`) — what collectors receive.
    - `MutationExecutor` (`runtime/mutation.py`) — what only faults receive;

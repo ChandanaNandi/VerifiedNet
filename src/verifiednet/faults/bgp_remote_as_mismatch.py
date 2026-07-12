@@ -128,12 +128,12 @@ class BgpRemoteAsMismatchScenario:
             raise PhaseTransitionError(
                 f"preconditions require PENDING, ledger is {self._ledger.current}"
             )
-        bundles = self._evidence_provider("precondition")
+        bundles = self._evidence_provider(Phase.PRECONDITION)
         check_list = (
-            checks.bgp_established(self._target_node, self._peer_ip, "precondition"),
-            checks.reachability_ok(self._target_node, self._peer_ip, "precondition"),
-            checks.iface_operational(self._target_node, self._iface, "precondition"),
-            checks.route_present(self._target_node, self._peer_loopback, "precondition"),
+            checks.bgp_established(self._target_node, self._peer_ip, Phase.PRECONDITION),
+            checks.reachability_ok(self._target_node, self._peer_ip, Phase.PRECONDITION),
+            checks.iface_operational(self._target_node, self._iface, Phase.PRECONDITION),
+            checks.route_present(self._target_node, self._peer_loopback, Phase.PRECONDITION),
         )
         results = tuple(self._verifier.verify(check, bundles) for check in check_list)
         if not all(result.committable for result in results):
@@ -195,15 +195,15 @@ class BgpRemoteAsMismatchScenario:
                 f"verify_onset requires INJECTED, ledger is {self._ledger.current}"
             )
         onset_checks = (
-            checks.bgp_not_established(self._target_node, self._peer_ip, "onset"),
-            checks.remote_as_equals(self._target_node, self._peer_ip, self._wrong_asn, "onset"),
+            checks.bgp_not_established(self._target_node, self._peer_ip, Phase.ONSET),
+            checks.remote_as_equals(self._target_node, self._peer_ip, self._wrong_asn, Phase.ONSET),
         )
         last_results: list[VerificationResult] = []
         last_bundles: Sequence[EvidenceBundle] = ()
 
         def sample() -> bool:
             nonlocal last_results, last_bundles
-            last_bundles = self._evidence_provider("onset")
+            last_bundles = self._evidence_provider(Phase.ONSET)
             last_results = [self._verifier.verify(check, last_bundles) for check in onset_checks]
             return all(result.committable for result in last_results)
 
@@ -221,12 +221,12 @@ class BgpRemoteAsMismatchScenario:
                 f"({outcome.elapsed_s:.1f}s): {outcome.last_detail}"
             )
         post_checks = [
-            checks.iface_operational(self._target_node, self._iface, "onset"),
-            checks.reachability_ok(self._target_node, self._peer_ip, "onset"),
+            checks.iface_operational(self._target_node, self._iface, Phase.ONSET),
+            checks.reachability_ok(self._target_node, self._peer_ip, Phase.ONSET),
         ]
         if self._peer_config_sha is not None:
             post_checks.append(
-                checks.config_unchanged(self._peer_node, self._peer_config_sha, "onset")
+                checks.config_unchanged(self._peer_node, self._peer_config_sha, Phase.ONSET)
             )
         post_results = [self._verifier.verify(check, last_bundles) for check in post_checks]
         self._ledger.append(LifecyclePhase.ONSET_VERIFIED, "onset checks satisfied twice")
@@ -281,9 +281,9 @@ class BgpRemoteAsMismatchScenario:
                 f"verify_recovery requires RESTORED, ledger is {self._ledger.current}"
             )
         recovery_checks = (
-            checks.bgp_established(self._target_node, self._peer_ip, "recovery"),
+            checks.bgp_established(self._target_node, self._peer_ip, Phase.RECOVERY),
             checks.remote_as_equals(
-                self._target_node, self._peer_ip, self._correct_remote_as, "recovery"
+                self._target_node, self._peer_ip, self._correct_remote_as, Phase.RECOVERY
             ),
         )
         last_results: list[VerificationResult] = []
@@ -291,7 +291,7 @@ class BgpRemoteAsMismatchScenario:
 
         def sample() -> bool:
             nonlocal last_results, last_bundles
-            last_bundles = self._evidence_provider("recovery")
+            last_bundles = self._evidence_provider(Phase.RECOVERY)
             last_results = [
                 self._verifier.verify(check, last_bundles) for check in recovery_checks
             ]
@@ -311,8 +311,8 @@ class BgpRemoteAsMismatchScenario:
                 f"({outcome.elapsed_s:.1f}s): {outcome.last_detail}"
             )
         route_checks = (
-            checks.route_present(self._target_node, self._peer_loopback, "recovery"),
-            checks.route_present(self._peer_node, self._target_loopback, "recovery"),
+            checks.route_present(self._target_node, self._peer_loopback, Phase.RECOVERY),
+            checks.route_present(self._peer_node, self._target_loopback, Phase.RECOVERY),
         )
         route_results = [self._verifier.verify(check, last_bundles) for check in route_checks]
         self._ledger.append(LifecyclePhase.RECOVERY_VERIFIED, "recovery checks satisfied twice")
