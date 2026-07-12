@@ -33,6 +33,12 @@ from verifiednet.labs.frr.fixture_capture import (
     capture_live_fixture_set,
     verify_fixture_manifest,
 )
+from verifiednet.labs.frr.rejected_scenario import (
+    DEFAULT_IMPOSSIBLE_PREFIX,
+    ImpossiblePreconditionSatisfiedError,
+    NonDeterministicRejectionError,
+    RejectedPreconditionRun,
+)
 from verifiednet.labs.frr.render import (
     render_all,
     render_compose,
@@ -50,6 +56,7 @@ from verifiednet.labs.frr.topologies import (
 __all__ = [
     "DEFAULT_COMMAND_TIMEOUT_S",
     "DEFAULT_DOWN_TIMEOUT_S",
+    "DEFAULT_IMPOSSIBLE_PREFIX",
     "DEFAULT_POLL_INTERVAL_S",
     "DEFAULT_UP_TIMEOUT_S",
     "PINNED_FRR_IMAGE",
@@ -61,8 +68,11 @@ __all__ = [
     "FrrComposeBackend",
     "FrrMutationTransportAdapter",
     "FrrReadOnlyTransportAdapter",
+    "ImpossiblePreconditionSatisfiedError",
     "LabBackendError",
     "LiveScenarioEvidenceProvider",
+    "NonDeterministicRejectionError",
+    "RejectedPreconditionRun",
     "ServiceResolutionError",
     "capture_live_fixture_set",
     "project_name_for_run",

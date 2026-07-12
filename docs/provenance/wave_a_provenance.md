@@ -40,6 +40,7 @@ existing Gate 3 contracts against the real lab; it adapts no external source.
 | G4-1 | `labs/frr/{backend,exec_adapter,compose_project,convergence,fixture_capture}.py` | new (Gate 4) | live FRR-on-Compose backend, logical/transport adapters, bounded BGP convergence, provenance fixture capture | `tests/unit/test_labs_frr_*`, `tests/integration/*` |
 | G4-2 | `labs/frr/scenario_evidence.py::LiveScenarioEvidenceProvider` | new (Gate 4) | wires the existing Gate 3 collectors to the scenario's evidence callable over the READ-ONLY executor; never touches mutation | `tests/unit/test_labs_frr_incident_wiring.py`, `tests/integration/test_frr_remote_as_accepted_incident.py` |
 | G4-3 | `FrrComposeBackend.build_mutation_adapter` | new (Gate 4) | explicit, separately-constructed mutation capability (never on the LabBackend protocol); `TargetPolicy` restricts mutation to the fault's node | `tests/unit/test_labs_frr_incident_wiring.py`, `tests/failure/test_labs_frr_incident_failures.py` |
+| G4-4 | `labs/frr/rejected_scenario.py::RejectedPreconditionRun` | new (Gate 4) | honest precondition-rejection path: impossible RFC 5737 route evaluated by the existing verifier; only a deterministic FAIL rejects (INSUFFICIENT/UNKNOWN raise loudly); ledger stays PENDING, zero mutation, no ground truth | `tests/unit/test_labs_frr_rejected_scenario.py`, `tests/integration/test_frr_precondition_rejected_incident.py` |
 
 ADR 0015 records the live-proven deviations (SYS_ADMIN required by FRR 8.4.1
 `privs_init`; API-delivered inline configs; `interface_name` pinning) — row 16
