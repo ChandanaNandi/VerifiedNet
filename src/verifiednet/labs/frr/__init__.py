@@ -40,6 +40,7 @@ from verifiednet.labs.frr.render import (
     render_frr_conf,
     write_rendered,
 )
+from verifiednet.labs.frr.scenario_evidence import LiveScenarioEvidenceProvider
 from verifiednet.labs.frr.topologies import (
     PINNED_FRR_IMAGE,
     PINNED_FRR_IMAGE_ARM64_DIGEST,
@@ -61,6 +62,7 @@ __all__ = [
     "FrrMutationTransportAdapter",
     "FrrReadOnlyTransportAdapter",
     "LabBackendError",
+    "LiveScenarioEvidenceProvider",
     "ServiceResolutionError",
     "capture_live_fixture_set",
     "project_name_for_run",

@@ -30,8 +30,23 @@ appendix-B specifications. This register plus NOTICE carry the attribution.
 | 19 | `incidents/oracle.py`, `incidents/builder.py` | — (new; Gate 1 NO_ACCEPTABLE_SOURCE) | — | — | new implementation | — | `tests/unit/test_incidents_*.py`, `tests/contract/test_incident_shapes.py` |
 | 20 | `common/canonical.py`, `common/runctx.py` | — (new; Gate 2.5 W5/W11) | — | — | new implementation | — | `tests/unit/test_common_canonical.py`, `tests/property/test_canonical_properties.py`, `tests/unit/test_common_hashing.py` |
 
+## Gate 4 additions (new integration code — no external source adapted)
+
+The Gate 4 live-execution layer is new VerifiedNet code that composes the
+existing Gate 3 contracts against the real lab; it adapts no external source.
+
+| # | VerifiedNet destination | Origin | Notes | Tests |
+|---|---|---|---|---|
+| G4-1 | `labs/frr/{backend,exec_adapter,compose_project,convergence,fixture_capture}.py` | new (Gate 4) | live FRR-on-Compose backend, logical/transport adapters, bounded BGP convergence, provenance fixture capture | `tests/unit/test_labs_frr_*`, `tests/integration/*` |
+| G4-2 | `labs/frr/scenario_evidence.py::LiveScenarioEvidenceProvider` | new (Gate 4) | wires the existing Gate 3 collectors to the scenario's evidence callable over the READ-ONLY executor; never touches mutation | `tests/unit/test_labs_frr_incident_wiring.py`, `tests/integration/test_frr_remote_as_accepted_incident.py` |
+| G4-3 | `FrrComposeBackend.build_mutation_adapter` | new (Gate 4) | explicit, separately-constructed mutation capability (never on the LabBackend protocol); `TargetPolicy` restricts mutation to the fault's node | `tests/unit/test_labs_frr_incident_wiring.py`, `tests/failure/test_labs_frr_incident_failures.py` |
+
+ADR 0015 records the live-proven deviations (SYS_ADMIN required by FRR 8.4.1
+`privs_init`; API-delivered inline configs; `interface_name` pinning) — row 16
+above (`SYS_ADMIN rejected`) is superseded for the live backend by that ADR.
+
 Not carried over (rejected, recorded here for completeness): EVL `_run`
-(shell=True/f-string/no timeout), EVL `host_can_ping` 4/15 floor, NN `SYS_ADMIN` +
+(shell=True/f-string/no timeout), EVL `host_can_ping` 4/15 floor, NN
 `container_name` + `pull_policy: never` compose patterns, STA per-agent Ollama
 clients, sonic-intent-agent module-global `proposed_plans` (Wave B anyway).
 

@@ -29,9 +29,18 @@ from pathlib import Path
 from verifiednet.common.errors import VerifiedNetError
 from verifiednet.common.runctx import RunContext
 from verifiednet.labs.frr.compose_project import ComposeProject
-from verifiednet.labs.frr.exec_adapter import FrrReadOnlyTransportAdapter
+from verifiednet.labs.frr.exec_adapter import (
+    FrrMutationTransportAdapter,
+    FrrReadOnlyTransportAdapter,
+)
 from verifiednet.labs.frr.render import render_all, write_rendered
-from verifiednet.runtime.policy import CommandPolicy, TargetPolicy
+from verifiednet.runtime.mutation import MutationExecutor
+from verifiednet.runtime.policy import (
+    CommandPolicy,
+    MutationCommandPolicy,
+    MutationCommandShape,
+    TargetPolicy,
+)
 from verifiednet.runtime.process import ProcessRunner, RawResult, default_runner
 from verifiednet.runtime.readonly import DEFAULT_MAX_OUTPUT_BYTES, ReadOnlyExecutor
 from verifiednet.runtime.results import ExecResult, ExecStatus
@@ -174,6 +183,34 @@ class FrrComposeBackend:
     def execute_readonly(self, target: str, argv: Sequence[str], timeout_s: float) -> ExecResult:
         """Run a policy-checked read-only command on *target* via the adapter."""
         return self._read_adapter.run(target, argv, timeout_s)
+
+    def build_mutation_adapter(
+        self,
+        *,
+        allowed_targets: Sequence[str],
+        allowed_shapes: Sequence[MutationCommandShape],
+    ) -> FrrMutationTransportAdapter:
+        """Construct a mutation transport adapter as an EXPLICIT separate capability.
+
+        This is deliberately NOT part of the ``LabBackend`` protocol and is
+        never returned by ``execute_readonly``/``readonly_executor``: a caller
+        that wants to mutate must ask for this adapter by name. The adapter
+        shares this backend's process runner, Compose project, transcript and
+        run context, so mutation entries interleave with reads in ONE transcript
+        (enabling write-ahead pairing) and ``allowed_targets`` is enforced by the
+        runtime ``TargetPolicy`` — a command aimed at any other node is DENIED.
+        """
+        executor = MutationExecutor(
+            self._runner,
+            MutationCommandPolicy(
+                allowed_binaries=frozenset({"vtysh"}),
+                allowed_shapes=tuple(allowed_shapes),
+            ),
+            TargetPolicy(allowed_targets=frozenset(allowed_targets)),
+            self._transcript,
+            self._run_ctx,
+        )
+        return FrrMutationTransportAdapter(self._project, executor, self._run_ctx)
 
     def capture_environment_metadata(self) -> dict[str, str]:
         """Collect real reproducibility metadata; never invent unavailable values."""
