@@ -10,6 +10,7 @@ be found quickly months later.
 docs/
 ├── README.md                     # this index
 ├── architecture/                 # how the system is designed, gate by gate
+│   ├── final-platform-vision.md  # the long-term destination (8 layers, trust core)
 │   ├── gate0/                     # source inventory, licenses, environment assumptions
 │   ├── gate1/                     # capability map + code-reuse matrix
 │   ├── gate2/                     # Wave A file-level harvest plan
@@ -24,12 +25,13 @@ docs/
 ## Reading order (for a newcomer)
 
 1. Top-level `../README.md` — what VerifiedNet is and its current status.
-2. `roadmap/future-gates.md` — where it is going.
-3. `architecture/decisions/` — the load-bearing choices, each in one short record.
-4. `architecture/gate3/contracts.md` + `package_boundaries.md` — the current shape.
-5. The gate folders (`gate0` → `gate3`) — the full derivation, in order.
-6. `research/` — the source-repo audits that seeded every reuse decision.
-7. `provenance/wave_a_provenance.md` — the audit trail for every adapted symbol.
+2. `architecture/final-platform-vision.md` — the destination and the layers.
+3. `roadmap/future-gates.md` — the gate-by-gate path there.
+4. `architecture/decisions/` — the load-bearing choices, each in one short record.
+5. `architecture/gate3/contracts.md` + `package_boundaries.md` — the current shape.
+6. The gate folders (`gate0` → `gate3`) — the full derivation, in order.
+7. `research/` — the source-repo audits that seeded every reuse decision.
+8. `provenance/wave_a_provenance.md` — the audit trail for every adapted symbol.
 
 ## Conventions
 
@@ -46,6 +48,9 @@ docs/
 
 ## Status
 
-Gates 0–3 complete. The platform is offline/architecture only: no live network has
-run, no AI capability exists yet, and FRR parser fixtures remain source-derived until
-Gate 4 re-records them against a live lab. See `architecture/gate3/limitations.md`.
+Gates 0–3 complete (offline architecture and contracts; 238 tests). Gate 4 (first live
+incident) is approved and next. Layers 2–8 in `final-platform-vision.md` are **planned,
+not implemented** — no AI, RAG, GraphRAG, SLM, agent, memory, or persistent workflow
+exists yet. The deterministic trust core (labs → faults → evidence → verification →
+oracle → incidents → recovery → artifacts) is fixed and is never replaced by a model.
+See `architecture/gate3/limitations.md`.
