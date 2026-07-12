@@ -1,0 +1,29 @@
+Building configuration...
+
+Current configuration:
+!
+frr version 8.4.1_git
+frr defaults traditional
+hostname router_a
+no ipv6 forwarding
+!
+interface eth1
+ ip address 172.30.0.1/30
+exit
+!
+interface lo
+ ip address 10.255.0.1/32
+exit
+!
+router bgp 65001
+ no bgp ebgp-requires-policy
+ no bgp default ipv4-unicast
+ neighbor 172.30.0.2 remote-as 65002
+ !
+ address-family ipv4 unicast
+  network 10.255.0.1/32
+  neighbor 172.30.0.2 activate
+ exit-address-family
+exit
+!
+end

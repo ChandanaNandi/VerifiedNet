@@ -50,6 +50,7 @@ class FakeDocker:
         exec_result: RawResult | None = None,
         version_result: RawResult | None = None,
         docker_missing: bool = False,
+        stalled_service: str | None = None,
     ) -> None:
         self.up_ok = up_ok
         self.down_ok = down_ok
@@ -58,6 +59,7 @@ class FakeDocker:
         self.exec_result = exec_result if exec_result is not None else _ok("FRRouting 8.4.1")
         self.version_result = version_result
         self.docker_missing = docker_missing
+        self.stalled_service = stalled_service
         self.calls: list[tuple[str, ...]] = []
         self._containers: tuple[tuple[str, str, str], ...] = (
             tuple((f"pre_{s}", s, "running") for s in SERVICES) if pre_existing else ()
@@ -65,7 +67,14 @@ class FakeDocker:
         self._networks: tuple[str, ...] = (NETWORK,) if pre_existing else ()
 
     def _running(self, state: str) -> tuple[tuple[str, str, str], ...]:
-        return tuple((f"id_{s}", s, state) for s in SERVICES)
+        return tuple(
+            (
+                f"id_{s}",
+                s,
+                "created" if s == self.stalled_service else state,
+            )
+            for s in SERVICES
+        )
 
     def __call__(
         self, argv: object, timeout_s: float, max_output_bytes: int
@@ -159,6 +168,27 @@ def test_start_times_out_when_services_never_ready(
         sleep=fake_clock.advance,  # type: ignore[attr-defined]
     )
     with pytest.raises(LabBackendError, match="not all running"):
+        backend.start()
+
+
+def test_start_times_out_when_one_router_stalls(
+    tmp_path: Path,
+    run_ctx: RunContext,
+    two_router_topology: TopologySpec,
+    fake_clock: object,
+) -> None:
+    # One service reaches running, the other never leaves "created".
+    runner = FakeDocker(stalled_service="router_b")
+    backend = make_backend(
+        runner,
+        tmp_path,
+        run_ctx,
+        two_router_topology,
+        up_timeout_s=3.0,
+        monotonic=fake_clock.monotonic,  # type: ignore[attr-defined]
+        sleep=fake_clock.advance,  # type: ignore[attr-defined]
+    )
+    with pytest.raises(LabBackendError, match="running=\\['router_a'\\]"):
         backend.start()
 
 

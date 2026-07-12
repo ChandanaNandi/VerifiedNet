@@ -13,7 +13,7 @@ from verifiednet.labs.frr.render import (
     render_frr_conf,
     write_rendered,
 )
-from verifiednet.schemas import TopologySpec
+from verifiednet.schemas import ImageSpec, TopologySpec
 
 pytestmark = pytest.mark.unit
 
@@ -80,8 +80,10 @@ def test_frr_conf_unknown_node_raises_key_error(
 def test_compose_shape(two_router_topology: TopologySpec) -> None:
     compose = render_compose(two_router_topology)
     assert "container_name" not in compose
-    assert "SYS_ADMIN" not in compose
+    # Gate 4 live requirement (ADR 0015): FRR 8.4.1 zebra/bgpd abort in
+    # privs_init without CAP_SYS_ADMIN in the permitted set — verified live.
     assert "- NET_ADMIN" in compose
+    assert "- SYS_ADMIN" in compose
     assert "image: frrouting/frr:v8.4.1" in compose
     assert "ipv4_address: 172.30.0.1\n" in compose
     assert "ipv4_address: 172.30.0.2\n" in compose
@@ -90,8 +92,79 @@ def test_compose_shape(two_router_topology: TopologySpec) -> None:
     assert "- subnet: 172.30.0.0/29" in compose
     assert "gateway: 172.30.0.6" in compose
     assert "  link0:" in compose
-    # config mounts are a Gate 4 concern, noted in a comment
     assert "Gate 4" in compose
+
+
+def test_compose_pins_link_interface_names(two_router_topology: TopologySpec) -> None:
+    # With one attached network Docker would name the NIC eth0; the approved
+    # topology says eth1, so the attachment pins interface_name (ADR 0015).
+    compose = render_compose(two_router_topology)
+    assert compose.count("interface_name: eth1") == 2
+
+
+def test_compose_pins_hostnames_to_node_names(two_router_topology: TopologySpec) -> None:
+    compose = render_compose(two_router_topology)
+    assert "    hostname: router_a" in compose
+    assert "    hostname: router_b" in compose
+
+
+def test_compose_embeds_each_routers_own_config(
+    two_router_topology: TopologySpec,
+) -> None:
+    compose = render_compose(two_router_topology)
+    # top-level inline configs exist for daemons and each router
+    assert "\nconfigs:" in compose or compose.startswith("configs:")
+    assert "  daemons:" in compose
+    assert "  frr_conf_router_a:" in compose
+    assert "  frr_conf_router_b:" in compose
+    # the embedded content is byte-identical to the standalone renders
+    for node in ("router_a", "router_b"):
+        conf = render_frr_conf(two_router_topology, node)
+        embedded = "\n".join(f"      {line}" for line in conf.splitlines())
+        assert embedded in compose
+    daemons_embedded = "\n".join(
+        f"      {line}" for line in render_daemons().splitlines()
+    )
+    assert daemons_embedded in compose
+    # router A's stanza references router A's config (and B's references B's)
+    services_only = compose.split("\nservices:\n")[1].split("\nnetworks:\n")[0]
+    a_block = services_only.split("  router_a:")[1].split("  router_b:")[0]
+    b_block = services_only.split("  router_b:")[1]
+    assert "- source: frr_conf_router_a" in a_block
+    assert "- source: frr_conf_router_b" in b_block
+    assert "- source: frr_conf_router_b" not in a_block
+    assert "- source: frr_conf_router_a" not in b_block
+
+
+def test_compose_config_targets_and_readonly_mode(
+    two_router_topology: TopologySpec,
+) -> None:
+    compose = render_compose(two_router_topology)
+    # verified in-container FRR paths (inspected live from the pinned image)
+    assert compose.count("target: /etc/frr/daemons") == 2
+    assert compose.count("target: /etc/frr/frr.conf") == 2
+    # read-only delivery
+    assert compose.count("mode: 0444") == 4
+
+
+def test_compose_has_no_host_mounts_or_ports(two_router_topology: TopologySpec) -> None:
+    compose = render_compose(two_router_topology)
+    # no bind mounts of the repository or any host path; no published ports
+    assert "volumes" not in compose
+    assert "ports" not in compose
+    assert "/Users/" not in compose and "/home/" not in compose
+
+
+def test_compose_retains_digest_pinned_image_reference(
+    two_router_topology: TopologySpec,
+) -> None:
+    pinned = (
+        "frrouting/frr:v8.4.1@sha256:"
+        "0f8c174d95add7916101077d4716822552c758b8ff3d2dcb55104f6534202e3e"
+    )
+    topo = two_router_topology.model_copy(update={"images": ImageSpec(frr=pinned)})
+    compose = render_compose(topo)
+    assert f"image: {pinned}" in compose
 
 
 def test_compose_gateway_never_collides_with_endpoint(

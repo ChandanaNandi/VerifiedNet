@@ -91,6 +91,19 @@ def test_interfaces_empty_stdout_raises_parser_error(run_ctx: RunContext) -> Non
         InterfaceStateCollector(executor, "router_a", run_ctx).collect("baseline")
 
 
+def test_interfaces_admin_up_missing_oper_still_raises(run_ctx: RunContext) -> None:
+    """The Gate 4 live-format adaptation is NARROW: missing operationalStatus is
+    tolerated only for admin-down entries; an admin-up interface without an
+    operational status remains a loud parse failure."""
+    executor = FakeExecutor()
+    executor.script(
+        IFACE_ARGV,
+        {"stdout": json.dumps({"eth1": {"administrativeStatus": "up"}})},
+    )
+    with pytest.raises(ParserError, match="eth1"):
+        InterfaceStateCollector(executor, "router_a", run_ctx).collect("baseline")
+
+
 def test_non_ok_exec_status_raises_parser_error_for_parsing_collectors(
     run_ctx: RunContext,
 ) -> None:

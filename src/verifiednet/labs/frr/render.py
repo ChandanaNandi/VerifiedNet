@@ -6,16 +6,25 @@ neuronoc-network-ops-assistant infra/lab configs (MIT, commit 5f24447) as an
 architectural reference; the rendering grammar itself is generated from
 ``TopologySpec`` — no NN config text is copied.
 
-Rules (Gate 3):
+Rules (Gate 3, amended Gate 4):
 - Renderers are PURE: same ``TopologySpec`` in, byte-identical text out.
   No file writes, no Docker invocation, no clocks, no randomness.
-- Compose services get ``cap_add: [NET_ADMIN]`` ONLY. NN's ``SYS_ADMIN``
-  grant was reviewed and REJECTED (provenance note): FRR needs NET_ADMIN for
-  interface/route manipulation; SYS_ADMIN is an unnecessary privilege.
-- No ``container_name`` in compose output — project-scoped naming is a
-  Gate 4 concern.
-- Config volumes/mounts are a Gate 4 concern; the compose text carries a
-  comment noting that.
+- Compose services get ``cap_add: [NET_ADMIN, SYS_ADMIN]``. Gate 3 had
+  rejected ``SYS_ADMIN`` as unnecessary; Gate 4 live execution DISPROVED that:
+  FRR 8.4.1 ``zebra``/``bgpd`` request ``cap_sys_admin`` in their permitted set
+  during ``privs_init`` and abort without it ("Failed to start zebra!").
+  NN's grant was load-bearing. See ADR 0015 for the recorded live evidence.
+- No ``container_name`` in compose output — container identity is resolved by
+  project + service labels.
+- Generated FRR configuration (``daemons``, per-node ``frr.conf``) is embedded
+  as Compose ``configs`` with inline content and delivered read-only (0444) to
+  the verified in-container paths ``/etc/frr/daemons`` and ``/etc/frr/frr.conf``
+  via the Docker API — never host bind mounts, which Docker Desktop file-sharing
+  policies can deny (verified live on macOS). See ADR 0015.
+- The link interface name inside each container is pinned with the Compose
+  ``interface_name`` attachment option to the topology's ``LinkEndpoint.iface``
+  (approved topology: ``eth1``) — with a single attached network Docker would
+  otherwise name it ``eth0``. See ADR 0015.
 
 ``write_rendered`` is a separate side-effecting helper for tests; the render
 functions themselves never touch the filesystem.
@@ -95,13 +104,23 @@ def render_frr_conf(topo: TopologySpec, node_name: str) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _embed_block(text: str, indent: str) -> list[str]:
+    """Embed *text* (no empty lines, first line unindented) as YAML block lines."""
+    return [f"{indent}{line}" for line in text.splitlines()]
+
+
 def render_compose(topo: TopologySpec) -> str:
     """Render docker-compose YAML text by deterministic string assembly.
 
     One bridge network per link, named ``link0..linkN`` in topology link
-    order, with static ``ipv4_address`` per endpoint. No ``container_name``
-    (Gate 3 rule), ``cap_add`` is NET_ADMIN only (NN's SYS_ADMIN rejected — see
-    module docstring). Byte-identical output for identical topologies.
+    order, with static ``ipv4_address`` per endpoint and the container-side
+    interface pinned to the topology's ``iface`` name via ``interface_name``.
+    No ``container_name``; ``hostname`` is pinned to the node name so live
+    captures are deterministic (otherwise FRR reports the random container id).
+    ``cap_add`` is NET_ADMIN + SYS_ADMIN (live requirement — module docstring,
+    ADR 0015). Generated ``daemons`` and per-node ``frr.conf`` are embedded as
+    inline Compose ``configs`` targeting the verified ``/etc/frr`` paths,
+    read-only (0444). Byte-identical output for identical topologies.
 
     Docker bridge gateway (Gate 4 live-execution fix): a point-to-point link is
     addressed from a /30 in the topology, which has no spare host for Docker's
@@ -113,16 +132,31 @@ def render_compose(topo: TopologySpec) -> str:
     stays /30.
     """
     lines: list[str] = [
-        "# Rendered by VerifiedNet (Gate 3). Node configs are mounted at Gate 4.",
-        "services:",
+        "# Rendered by VerifiedNet (Gate 4). Generated FRR configs are delivered",
+        "# as read-only inline Compose configs (API-delivered; no host bind mounts).",
+        "configs:",
+        "  daemons:",
+        "    content: |",
+        *_embed_block(render_daemons(), "      "),
     ]
+    for node in topo.nodes:
+        lines.extend(
+            [
+                f"  frr_conf_{node.name}:",
+                "    content: |",
+                *_embed_block(render_frr_conf(topo, node.name), "      "),
+            ]
+        )
+    lines.append("services:")
     for node in topo.nodes:
         lines.extend(
             [
                 f"  {node.name}:",
                 f"    image: {topo.images.frr}",
+                f"    hostname: {node.name}",
                 "    cap_add:",
                 "      - NET_ADMIN",
+                "      - SYS_ADMIN",
                 "    networks:",
             ]
         )
@@ -131,8 +165,23 @@ def render_compose(topo: TopologySpec) -> str:
                 if ep.node == node.name:
                     address = ipaddress.ip_interface(ep.ip).ip
                     lines.extend(
-                        [f"      link{index}:", f"        ipv4_address: {address}"]
+                        [
+                            f"      link{index}:",
+                            f"        ipv4_address: {address}",
+                            f"        interface_name: {ep.iface}",
+                        ]
                     )
+        lines.extend(
+            [
+                "    configs:",
+                "      - source: daemons",
+                "        target: /etc/frr/daemons",
+                "        mode: 0444",
+                f"      - source: frr_conf_{node.name}",
+                "        target: /etc/frr/frr.conf",
+                "        mode: 0444",
+            ]
+        )
     lines.append("networks:")
     for index, link in enumerate(topo.links):
         link_net = ipaddress.ip_interface(link.a.ip).network

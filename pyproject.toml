@@ -55,5 +55,6 @@ markers = [
     "property: hypothesis property tests",
     "failure: failure-path tests",
     "security: AST security-boundary tests",
+    "integration: live Docker-gated integration tests (skip when Docker is unavailable)",
 ]
 addopts = "-q"

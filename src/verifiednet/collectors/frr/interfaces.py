@@ -5,6 +5,15 @@ Provenance: parser behavior adapted from neuronoc-network-ops-assistant
 modifications: detached from NN schemas, bounded, sorted output). All
 interfaces are included (loopback too), sorted by name, capped at 64
 (bounded-output discipline) with an explicit ``iface._truncated`` marker.
+
+Live-format adaptation (Gate 4, proven against the captured live fixture set
+``tests/fixtures/frr/live/frr-8.4.1-linux-arm64``): FRR 8.4.1 omits
+``operationalStatus`` entirely for administratively-down kernel
+pseudo-interfaces (``erspan0``, ``gre0``, ``tunl0`` …). An admin-down
+interface cannot be operationally up, so a missing operational status is
+normalized to ``"down"`` ONLY when the administrative status is ``down``;
+every other absence remains a loud ``ParserError``. Source-derived fixture
+shapes (both keys always present) parse exactly as before.
 """
 
 from __future__ import annotations
@@ -79,6 +88,14 @@ class InterfaceStateCollector:
             oper = entry.get("operationalStatus")
             if oper is None:
                 oper = entry.get("operStatus")
+            if (
+                oper is None
+                and isinstance(admin, str)
+                and admin.lower() == "down"
+            ):
+                # Live FRR 8.4.1 omits operationalStatus for admin-down
+                # pseudo-interfaces; admin-down implies oper-down.
+                oper = "down"
             if not isinstance(admin, str) or not isinstance(oper, str):
                 raise ParserError(
                     f"{self.name}: interface {ifname!r} missing admin/oper status"

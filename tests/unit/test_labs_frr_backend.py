@@ -211,3 +211,39 @@ def test_reset_stops_then_starts(
     backend.reset()
     assert sum(1 for c in runner.calls if "down" in c) >= 1
     assert sum(1 for c in runner.calls if "up" in c) >= 2
+
+
+def test_ping_is_allowed_through_the_read_policy(
+    tmp_path: Path, run_ctx: RunContext, two_router_topology: TopologySpec
+) -> None:
+    # The reachability collector's probes must pass the backend's read policy.
+    runner = FakeDocker(exec_result=_ok("1 packets transmitted, 1 received"))
+    backend = make_backend(runner, tmp_path, run_ctx, two_router_topology)
+    backend.start()
+    result = backend.execute_readonly(
+        "router_a", ["ping", "-c", "1", "-W", "2", "172.30.0.2"], 10.0
+    )
+    assert result.status is ExecStatus.OK
+
+
+def test_mutating_vtysh_is_still_denied(
+    tmp_path: Path, run_ctx: RunContext, two_router_topology: TopologySpec
+) -> None:
+    runner = FakeDocker()
+    backend = make_backend(runner, tmp_path, run_ctx, two_router_topology)
+    backend.start()
+    result = backend.execute_readonly(
+        "router_a", ["vtysh", "-c", "configure terminal"], 10.0
+    )
+    assert result.status is ExecStatus.DENIED_COMMAND
+
+
+def test_readonly_executor_property_satisfies_collector_protocol(
+    tmp_path: Path, run_ctx: RunContext, two_router_topology: TopologySpec
+) -> None:
+    runner = FakeDocker()
+    backend = make_backend(runner, tmp_path, run_ctx, two_router_topology)
+    executor = backend.readonly_executor
+    result = executor.run("router_b", ("vtysh", "-c", "show version"), 10.0)
+    assert result.status is ExecStatus.OK
+    assert result.invocation is not None

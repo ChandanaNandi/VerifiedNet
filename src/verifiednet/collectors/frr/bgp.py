@@ -59,33 +59,43 @@ class BgpSummaryCollector:
         )
 
     def _parse(self, stdout: str) -> dict[str, str]:
-        try:
-            data = json.loads(stdout)
-        except json.JSONDecodeError as exc:
-            raise ParserError(f"{self.name}: malformed JSON: {exc}") from exc
-        if not isinstance(data, dict):
-            raise ParserError(f"{self.name}: top-level JSON is not an object")
-        ipv4 = data.get("ipv4Unicast")
-        if not isinstance(ipv4, dict):
-            raise ParserError(f"{self.name}: missing ipv4Unicast object")
-        local_as = ipv4.get("as")
-        if not isinstance(local_as, int) or isinstance(local_as, bool):
-            raise ParserError(f"{self.name}: missing/invalid ipv4Unicast.as")
-        peers = ipv4.get("peers")
-        if not isinstance(peers, dict):
-            raise ParserError(f"{self.name}: missing ipv4Unicast.peers object")
-        normalized: dict[str, str] = {"bgp.local_as": str(local_as)}
-        for ip, peer in peers.items():
-            if not isinstance(peer, dict):
-                raise ParserError(f"{self.name}: peer entry {ip!r} is not an object")
-            state = peer.get("state")
-            if state is None:
-                state = peer.get("peerState")
-            if not isinstance(state, str):
-                raise ParserError(f"{self.name}: peer {ip!r} has no state/peerState")
-            remote_as = peer.get("remoteAs")
-            if not isinstance(remote_as, int) or isinstance(remote_as, bool):
-                raise ParserError(f"{self.name}: peer {ip!r} has no remoteAs")
-            normalized[f"bgp.peer.{ip}.state"] = state
-            normalized[f"bgp.peer.{ip}.remote_as"] = str(remote_as)
-        return sorted_normalized(normalized)
+        return parse_bgp_summary(stdout, name=self.name)
+
+
+def parse_bgp_summary(stdout: str, *, name: str = "frr.bgp_summary") -> dict[str, str]:
+    """Parse ``show ip bgp summary json`` output into normalized keys.
+
+    Module-level so the live BGP convergence helper (Gate 4) can reuse the
+    exact same parsing/validation as the collector — one parser, one behavior.
+    Raises ``ParserError`` on malformed or structurally missing output.
+    """
+    try:
+        data = json.loads(stdout)
+    except json.JSONDecodeError as exc:
+        raise ParserError(f"{name}: malformed JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ParserError(f"{name}: top-level JSON is not an object")
+    ipv4 = data.get("ipv4Unicast")
+    if not isinstance(ipv4, dict):
+        raise ParserError(f"{name}: missing ipv4Unicast object")
+    local_as = ipv4.get("as")
+    if not isinstance(local_as, int) or isinstance(local_as, bool):
+        raise ParserError(f"{name}: missing/invalid ipv4Unicast.as")
+    peers = ipv4.get("peers")
+    if not isinstance(peers, dict):
+        raise ParserError(f"{name}: missing ipv4Unicast.peers object")
+    normalized: dict[str, str] = {"bgp.local_as": str(local_as)}
+    for ip, peer in peers.items():
+        if not isinstance(peer, dict):
+            raise ParserError(f"{name}: peer entry {ip!r} is not an object")
+        state = peer.get("state")
+        if state is None:
+            state = peer.get("peerState")
+        if not isinstance(state, str):
+            raise ParserError(f"{name}: peer {ip!r} has no state/peerState")
+        remote_as = peer.get("remoteAs")
+        if not isinstance(remote_as, int) or isinstance(remote_as, bool):
+            raise ParserError(f"{name}: peer {ip!r} has no remoteAs")
+        normalized[f"bgp.peer.{ip}.state"] = state
+        normalized[f"bgp.peer.{ip}.remote_as"] = str(remote_as)
+    return sorted_normalized(normalized)

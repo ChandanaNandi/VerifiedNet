@@ -79,9 +79,11 @@ class FrrComposeBackend:
         self._services = tuple(node.name for node in topology.nodes)
         self._compose_file = self._work_dir / "docker-compose.yml"
         self._project = ComposeProject.for_run(run_ctx.run_id, self._compose_file, self._services)
+        # "ping" is allowed alongside "vtysh": the reachability collector's
+        # probes are read-only evidence gathering (Gate 2.5 W8 3/3 rule).
         read_executor = ReadOnlyExecutor(
             runner,
-            CommandPolicy(allowed_binaries=frozenset({"vtysh"})),
+            CommandPolicy(allowed_binaries=frozenset({"vtysh", "ping"})),
             TargetPolicy(allowed_targets=frozenset(self._services)),
             self._transcript,
             run_ctx,
@@ -104,6 +106,15 @@ class FrrComposeBackend:
     @property
     def transcript(self) -> TranscriptWriter:
         return self._transcript
+
+    @property
+    def readonly_executor(self) -> FrrReadOnlyTransportAdapter:
+        """The read-only transport adapter, for wiring collectors.
+
+        Satisfies the collectors' ``ReadOnlyExec`` protocol. Mutation capability
+        is deliberately NOT exposed anywhere on this backend.
+        """
+        return self._read_adapter
 
     def topology(self) -> TopologySpec:
         return self._topology

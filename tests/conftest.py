@@ -8,15 +8,10 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from verifiednet.common.runctx import RunContext
+from verifiednet.labs.frr.topologies import two_router_frr_topology
 from verifiednet.schemas import (
-    BgpSessionSpec,
-    ImageSpec,
-    LinkEndpoint,
-    LinkSpec,
-    NodeSpec,
     ScenarioDefinition,
     ScenarioTimeouts,
-    SessionEndpoint,
     TopologySpec,
 )
 
@@ -50,28 +45,8 @@ def run_ctx(fake_clock: FakeClock) -> RunContext:
 
 
 def make_two_router_topology() -> TopologySpec:
-    return TopologySpec(
-        name="verifiednet-frr-2r",
-        backend="frr-compose",
-        nodes=(
-            NodeSpec(name="router_a", asn=65001, loopback="10.255.0.1/32"),
-            NodeSpec(name="router_b", asn=65002, loopback="10.255.0.2/32"),
-        ),
-        links=(
-            LinkSpec(
-                a=LinkEndpoint(node="router_a", iface="eth1", ip="172.30.0.1/30"),
-                b=LinkEndpoint(node="router_b", iface="eth1", ip="172.30.0.2/30"),
-            ),
-        ),
-        sessions=(
-            BgpSessionSpec(
-                session_id="a-b",
-                a=SessionEndpoint(node="router_a", peer_ip="172.30.0.2", remote_as=65002),
-                b=SessionEndpoint(node="router_b", peer_ip="172.30.0.1", remote_as=65001),
-            ),
-        ),
-        images=ImageSpec(frr="frrouting/frr:v8.4.1"),
-    )
+    # Delegates to the canonical factory (single source of the approved values).
+    return two_router_frr_topology()
 
 
 def make_scenario() -> ScenarioDefinition:

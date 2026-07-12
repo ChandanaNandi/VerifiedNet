@@ -1,0 +1,43 @@
+{
+"ipv4Unicast":{
+  "routerId":"10.255.0.2",
+  "as":65002,
+  "vrfId":0,
+  "vrfName":"default",
+  "tableVersion":2,
+  "ribCount":3,
+  "ribMemory":576,
+  "peerCount":1,
+  "peerMemory":734296,
+  "peers":{
+    "172.30.0.1":{
+      "hostname":"router_a",
+      "remoteAs":65001,
+      "localAs":65002,
+      "version":4,
+      "msgRcvd":5,
+      "msgSent":5,
+      "tableVersion":0,
+      "outq":0,
+      "inq":0,
+      "peerUptime":"00:00:03",
+      "peerUptimeMsec":3000,
+      "peerUptimeEstablishedEpoch":1783877195,
+      "pfxRcd":1,
+      "pfxSnt":2,
+      "state":"Established",
+      "peerState":"OK",
+      "connectionsEstablished":1,
+      "connectionsDropped":0,
+      "idType":"ipv4"
+    }
+  },
+  "failedPeers":0,
+  "displayedPeers":1,
+  "totalPeers":1,
+  "dynamicPeers":0,
+  "bestPath":{
+    "multiPathRelax":"false"
+  }
+}
+}

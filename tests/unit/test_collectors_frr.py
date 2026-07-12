@@ -145,6 +145,29 @@ def test_interfaces_up(run_ctx: RunContext) -> None:
     assert "iface._truncated" not in record.normalized
 
 
+def test_interfaces_live_admin_down_pseudo_interface_missing_oper(
+    run_ctx: RunContext,
+) -> None:
+    """Live FRR 8.4.1 omits operationalStatus for admin-down pseudo-interfaces.
+
+    Proven by the live capture set (Gate 4): admin-down implies oper-down, so
+    the missing key normalizes to "down" — for admin-down entries ONLY.
+    """
+    live_shape = {
+        "erspan0": {"administrativeStatus": "down", "linkUps": 0},
+        "eth1": {"administrativeStatus": "up", "operationalStatus": "up"},
+        "lo": {"administrativeStatus": "up", "operationalStatus": "up"},
+    }
+    import json as _json
+
+    executor = FakeExecutor()
+    executor.script(IFACE_ARGV, {"stdout": _json.dumps(live_shape)})
+    record = InterfaceStateCollector(executor, "router_a", run_ctx).collect("baseline")
+    assert record.normalized["iface.erspan0.admin"] == "down"
+    assert record.normalized["iface.erspan0.oper"] == "down"
+    assert record.normalized["iface.eth1.oper"] == "up"
+
+
 def test_reachability_all_probes_succeed(run_ctx: RunContext) -> None:
     executor = FakeExecutor()
     ok = {"exit_code": 0, "stdout": "1 packets transmitted, 1 received"}
@@ -212,6 +235,17 @@ def test_running_config_hash(run_ctx: RunContext) -> None:
     assert record.normalized == {"config.sha256": expected}
     assert record.raw_payload == config_text
     assert record.raw_sha256 == expected
+
+
+def test_parse_bgp_summary_is_public_and_matches_collector(run_ctx: RunContext) -> None:
+    """The convergence helper reuses the collector's exact parser (Gate 4)."""
+    from verifiednet.collectors.frr.bgp import parse_bgp_summary
+
+    raw = _fixture("bgp_summary_established.json")
+    executor = FakeExecutor()
+    executor.script(BGP_ARGV, {"stdout": raw})
+    record = BgpSummaryCollector(executor, "router_a", run_ctx).collect("baseline")
+    assert parse_bgp_summary(raw) == record.normalized
 
 
 def test_collectors_expose_names(run_ctx: RunContext) -> None:
