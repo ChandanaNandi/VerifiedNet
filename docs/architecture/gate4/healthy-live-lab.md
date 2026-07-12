@@ -112,8 +112,10 @@ remain untouched and still pass their tests.
 ## Integration tier
 
 `tests/integration/` (marker: `integration`) is Docker-gated: without a usable
-daemon every test SKIPS with an explicit reason. Not wired into any required
-check. The tier covers: configured-lab full lifecycle (start → health → real
+daemon — or with a Docker Engine older than 28.1, which lacks compose
+`interface_name` — every test SKIPS with an explicit reason. CI runs
+`pytest -m "not integration"`; the tier is local-first and not a required
+check anywhere. The tier covers: configured-lab full lifecycle (start → health → real
 convergence → config-applied proof → read-only transcript → teardown →
 independent zero-resource checks by project label), the full healthy-evidence
 matrix on a live lab, and integrity/parseability of the committed live fixture

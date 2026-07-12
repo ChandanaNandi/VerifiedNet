@@ -22,4 +22,7 @@ jobs:
       - name: Security boundary tests
         run: uv run pytest tests/security -m security
       - name: Full test suite (no live services)
-        run: uv run pytest
+        # The integration tier boots real Docker labs and requires Engine >= 28.1
+        # (compose interface_name; ADR 0015). It is local-first and explicitly
+        # NOT a required check — excluded here by marker.
+        run: uv run pytest -m "not integration"

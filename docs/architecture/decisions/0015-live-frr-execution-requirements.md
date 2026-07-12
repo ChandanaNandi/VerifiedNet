@@ -65,9 +65,13 @@ are deterministic (FRR otherwise reports the random container id as hostname).
 - The renderer emits `SYS_ADMIN`; the security posture note in
   `labs/frr/render.py` documents why, and regression tests assert both caps and
   the absence of host mounts/ports.
-- Lab startup requires Docker Engine/Compose versions recent enough for inline
-  `configs.content` and `interface_name` (Compose ≥ 2.32 effectively). Recorded
-  in the environment manifest of every live capture.
+- Lab startup requires Docker Engine ≥ 28.1 for `interface_name` (confirmed in
+  practice: the GitHub CI runner's older engine fails with "interface_name
+  requires Docker Engine v28.1 or later") plus a Compose recent enough for
+  inline `configs.content`. The integration gate skips with an explicit reason
+  below that engine version, and CI runs `pytest -m "not integration"` — the
+  integration tier is local-first and never a required check. Versions are
+  recorded in the environment manifest of every live capture.
 - ADR 0006's "not /29" note referred to FRR link addressing, which remains /30;
   the Docker IPAM widening (Step 1) and this ADR concern the transport layer
   only.

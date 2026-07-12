@@ -17,6 +17,28 @@ import pytest
 
 from verifiednet.runtime.process import default_runner
 
+#: Minimum Docker Engine for the live lab: compose `interface_name` needs
+#: Engine >= 28.1 (ADR 0015; proven by the CI runner's older engine failing
+#: with "interface_name requires Docker Engine v28.1 or later").
+_MIN_ENGINE = (28, 1)
+
+
+def _engine_too_old(version: str) -> str | None:
+    """Return a reason when *version* predates ``_MIN_ENGINE``; None when fine."""
+    parts = version.split(".")
+    try:
+        major = int(parts[0])
+        minor = int(parts[1]) if len(parts) > 1 else 0
+    except (ValueError, IndexError):
+        return f"unparseable Docker server version: {version!r}"
+    if (major, minor) < _MIN_ENGINE:
+        return (
+            f"Docker Engine {version} < "
+            f"{_MIN_ENGINE[0]}.{_MIN_ENGINE[1]} "
+            "(compose interface_name required; ADR 0015)"
+        )
+    return None
+
 
 def _docker_unavailable_reason() -> str | None:
     if shutil.which("docker") is None:
@@ -27,7 +49,7 @@ def _docker_unavailable_reason() -> str | None:
     if result.exit_code != 0 or not result.stdout.strip():
         detail = result.stderr.strip() or "no server version reported"
         return f"docker daemon unavailable: {detail}"
-    return None
+    return _engine_too_old(result.stdout.strip())
 
 
 @pytest.fixture(autouse=True, scope="session")
