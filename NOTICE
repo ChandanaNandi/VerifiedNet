@@ -1,0 +1,22 @@
+VerifiedNet
+Copyright 2026 Chandana Nandi
+
+Licensed under the Apache License, Version 2.0.
+
+This product includes software adapted from the following projects by the same author:
+
+- neuronoc-network-ops-assistant (MIT License, Copyright (c) 2026 Chandana Nandi)
+  commit 5f2444742afbfd557d24d1e30fedd337f565f432 — command runner, vtysh allow-list
+  guard, FRR parser behavior, AST security-scan pattern (adapted).
+- sonic-troubleshooting-agent (MIT License, Copyright (c) 2026 Chandana Nandi)
+  commit eb4c8185ec6d5fab77d526f07aa9f9766d8034bb — fault lifecycle and bounded polling
+  patterns (adapted).
+- evpn-vxlan-frr-lab (MIT License, Copyright (c) 2026 Chandana Nandi)
+  commit 5b5a479bff19b1ae300f97434dbb0bcdc49adbea — deterministic reachability check
+  semantics (adapted; probabilistic ping floor rejected).
+
+closcall (no published license; same author): behavior of the ledger, claim
+verification, manifest hashing, and structured-logging components was REIMPLEMENTED
+FROM SPECIFICATION for VerifiedNet without copying protected expression; see
+docs/provenance/wave_a_provenance.md. Public redistribution of closcall-derived
+expression remains blocked until closcall publishes a license (Gate 0 action).
