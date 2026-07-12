@@ -99,10 +99,18 @@ def render_compose(topo: TopologySpec) -> str:
     """Render docker-compose YAML text by deterministic string assembly.
 
     One bridge network per link, named ``link0..linkN`` in topology link
-    order, with static ``ipv4_address`` per endpoint and an ipam subnet
-    declaration equal to the link /30. No ``container_name`` (Gate 3 rule),
-    ``cap_add`` is NET_ADMIN only (NN's SYS_ADMIN rejected — see module
-    docstring). Byte-identical output for identical topologies.
+    order, with static ``ipv4_address`` per endpoint. No ``container_name``
+    (Gate 3 rule), ``cap_add`` is NET_ADMIN only (NN's SYS_ADMIN rejected — see
+    module docstring). Byte-identical output for identical topologies.
+
+    Docker bridge gateway (Gate 4 live-execution fix): a point-to-point link is
+    addressed from a /30 in the topology, which has no spare host for Docker's
+    mandatory bridge gateway — Docker would claim the first usable host (the
+    same address as endpoint A) and container creation fails with "Address
+    already in use". The *Docker* ipam subnet is therefore widened by one prefix
+    bit and an explicit ``gateway`` is pinned to the highest host that is not an
+    endpoint. The FRR interface addressing in ``frr.conf`` is unaffected and
+    stays /30.
     """
     lines: list[str] = [
         "# Rendered by VerifiedNet (Gate 3). Node configs are mounted at Gate 4.",
@@ -127,14 +135,23 @@ def render_compose(topo: TopologySpec) -> str:
                     )
     lines.append("networks:")
     for index, link in enumerate(topo.links):
-        subnet = ipaddress.ip_interface(link.a.ip).network
+        link_net = ipaddress.ip_interface(link.a.ip).network
+        docker_net = link_net.supernet(new_prefix=link_net.prefixlen - 1)
+        endpoints = {
+            ipaddress.ip_interface(link.a.ip).ip,
+            ipaddress.ip_interface(link.b.ip).ip,
+        }
+        gateway = next(
+            host for host in reversed(list(docker_net.hosts())) if host not in endpoints
+        )
         lines.extend(
             [
                 f"  link{index}:",
                 "    driver: bridge",
                 "    ipam:",
                 "      config:",
-                f"        - subnet: {subnet}",
+                f"        - subnet: {docker_net}",
+                f"          gateway: {gateway}",
             ]
         )
     return "\n".join(lines) + "\n"

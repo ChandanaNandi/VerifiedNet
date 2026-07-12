@@ -7,6 +7,7 @@ specifically, so mutation capability must never leak through the read path.
 
 from __future__ import annotations
 
+from verifiednet.runtime.invocation import CommandInvocation
 from verifiednet.runtime.mutation import MutationExecutor
 from verifiednet.runtime.policy import (
     CommandPolicy,
@@ -26,6 +27,7 @@ from verifiednet.runtime.transcript import (
 )
 
 __all__ = [
+    "CommandInvocation",
     "CommandPolicy",
     "ExecResult",
     "ExecStatus",

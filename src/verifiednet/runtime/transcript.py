@@ -22,6 +22,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict
 from verifiednet.common.canonical import canonical_json_str
 from verifiednet.common.errors import TranscriptWriteError
 from verifiednet.common.hashing import sha256_canonical
+from verifiednet.runtime.invocation import CommandInvocation
 
 
 def _require_tz(value: datetime) -> datetime:
@@ -46,6 +47,10 @@ class TranscriptEntry(BaseModel):
     status: str
     started_at: _AwareDatetime
     duration_s: float = 0.0
+    #: Gate 4 (additive, optional): pairs pending/terminal entries by the same
+    #: ``command_id`` and retains both logical and transport argv. ``None`` for
+    #: Gate 3-style entries, so v0.3-serialized transcript lines still validate.
+    invocation: CommandInvocation | None = None
 
 
 class TranscriptWriter(Protocol):

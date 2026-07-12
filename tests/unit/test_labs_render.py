@@ -85,10 +85,27 @@ def test_compose_shape(two_router_topology: TopologySpec) -> None:
     assert "image: frrouting/frr:v8.4.1" in compose
     assert "ipv4_address: 172.30.0.1\n" in compose
     assert "ipv4_address: 172.30.0.2\n" in compose
-    assert "- subnet: 172.30.0.0/30" in compose
+    # Docker bridge subnet is widened one bit past the /30 link so the mandatory
+    # gateway has a free host (endpoints keep .1/.2; gateway pinned off them).
+    assert "- subnet: 172.30.0.0/29" in compose
+    assert "gateway: 172.30.0.6" in compose
     assert "  link0:" in compose
     # config mounts are a Gate 4 concern, noted in a comment
     assert "Gate 4" in compose
+
+
+def test_compose_gateway_never_collides_with_endpoint(
+    two_router_topology: TopologySpec,
+) -> None:
+    # Regression: a /30 link gives Docker's bridge gateway the same address as
+    # endpoint A (.1), so container creation failed with "Address already in
+    # use". The gateway must be pinned to a host that is neither endpoint.
+    compose = render_compose(two_router_topology)
+    gateway_lines = [ln.strip() for ln in compose.splitlines() if ln.strip().startswith("gateway:")]
+    assert gateway_lines, "compose must declare an explicit gateway per link"
+    gateways = {ln.split("gateway:")[1].strip() for ln in gateway_lines}
+    assert "172.30.0.1" not in gateways
+    assert "172.30.0.2" not in gateways
 
 
 def test_write_rendered_writes_into_tmp_path(

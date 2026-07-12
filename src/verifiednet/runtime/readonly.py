@@ -1,20 +1,23 @@
 """Read-only command executor.
 
-Contract (Gate 3 Step 4):
+Contract (Gate 3 Step 4, extended in Gate 4):
 
-- The ``target`` is NOT prepended to argv: the runner receives argv exactly as
-  given (docker-exec adaptation per target is Gate 4 adapter work).
+- Gate 3: the ``target`` is NOT prepended to argv; the runner receives argv
+  exactly as given.
+- Gate 4 (additive): a caller (the FRR transport adapter) may pass
+  ``transport_argv`` and an ``invocation``. Policy still validates the *logical*
+  ``argv``; the runner receives ``transport_argv`` (what actually runs). The
+  ``ExecResult`` and transcript entry retain the ``invocation`` so the logical
+  and transport commands stay paired under one ``command_id``. When
+  ``transport_argv`` is omitted the behaviour is exactly Gate 3's.
 - Policy checks run BEFORE execution; a denial returns a ``DENIED_*`` result
   without executing, and denials are still transcripted (stage="completed").
 - The transcript entry is appended AFTER execution (stage="completed"). If the
-  append raises ``TranscriptWriteError``, the read result is still returned
-  with ``transcript_ok=False`` — a read transcript failure marks the run
-  incomplete downstream; it is visible, never swallowed, but does not raise.
-- Timeout / binary-not-found are handled inside the runner (mapped to TIMEOUT /
-  TARGET_NOT_FOUND). Any other exception from the runner propagates — nothing
-  is silently swallowed.
-- Ordering and time come only from ``RunContext`` (seq + injected clock), so
-  tests are fully deterministic with ``FakeClock``.
+  append raises ``TranscriptWriteError``, the read result is still returned with
+  ``transcript_ok=False`` — visible, never swallowed, but does not raise.
+- Timeout / binary-not-found are handled inside the runner. Any other exception
+  from the runner propagates — nothing is silently swallowed.
+- Ordering and time come only from ``RunContext`` (seq + injected clock).
 """
 
 from __future__ import annotations
@@ -24,6 +27,7 @@ from datetime import datetime
 
 from verifiednet.common.errors import PolicyViolationError, TranscriptWriteError
 from verifiednet.common.runctx import RunContext
+from verifiednet.runtime.invocation import CommandInvocation
 from verifiednet.runtime.policy import CommandPolicy, TargetPolicy
 from verifiednet.runtime.process import ProcessRunner, RawResult
 from verifiednet.runtime.results import ExecResult, ExecStatus
@@ -62,31 +66,49 @@ class ReadOnlyExecutor:
         self._run_ctx = run_ctx
         self._max_output_bytes = max_output_bytes
 
-    def run(self, target: str, argv: Sequence[str], timeout_s: float) -> ExecResult:
-        """Policy-check, execute, transcript, and return an ``ExecResult``."""
+    def run(
+        self,
+        target: str,
+        argv: Sequence[str],
+        timeout_s: float,
+        *,
+        transport_argv: Sequence[str] | None = None,
+        invocation: CommandInvocation | None = None,
+    ) -> ExecResult:
+        """Policy-check the logical ``argv``, execute (transport if given), record.
+
+        ``transport_argv`` (when provided) is what the runner executes; ``argv``
+        is always what the command policy validates. ``invocation`` is retained
+        verbatim on the result and transcript entry.
+        """
         seq = self._run_ctx.next_seq()
-        argv_t = tuple(argv)
+        logical_t = tuple(argv)
+        exec_argv = tuple(transport_argv) if transport_argv is not None else logical_t
         started_at = self._run_ctx.now()
 
         try:
-            self._command_policy.check(argv_t)
+            self._command_policy.check(logical_t)
         except PolicyViolationError as exc:
-            return self._denied(ExecStatus.DENIED_COMMAND, target, argv_t, seq, started_at, exc)
+            return self._denied(
+                ExecStatus.DENIED_COMMAND, target, logical_t, seq, started_at, exc, invocation
+            )
         try:
             self._target_policy.check(target)
         except PolicyViolationError as exc:
-            return self._denied(ExecStatus.DENIED_TARGET, target, argv_t, seq, started_at, exc)
+            return self._denied(
+                ExecStatus.DENIED_TARGET, target, logical_t, seq, started_at, exc, invocation
+            )
 
-        raw = self._runner(argv_t, timeout_s, self._max_output_bytes)
+        raw = self._runner(exec_argv, timeout_s, self._max_output_bytes)
         duration_s = (self._run_ctx.now() - started_at).total_seconds()
         status = status_from_raw(raw)
         transcript_ok = self._append_completed(
-            seq, target, argv_t, status.value, started_at, duration_s
+            seq, target, exec_argv, status.value, started_at, duration_s, invocation
         )
         return ExecResult(
             status=status,
             target=target,
-            argv=argv_t,
+            argv=exec_argv,
             exit_code=raw.exit_code,
             stdout=raw.stdout,
             stderr=raw.stderr,
@@ -94,6 +116,7 @@ class ReadOnlyExecutor:
             duration_s=duration_s,
             seq=seq,
             transcript_ok=transcript_ok,
+            invocation=invocation,
         )
 
     def _denied(
@@ -104,10 +127,11 @@ class ReadOnlyExecutor:
         seq: int,
         started_at: datetime,
         reason: PolicyViolationError,
+        invocation: CommandInvocation | None,
     ) -> ExecResult:
         duration_s = (self._run_ctx.now() - started_at).total_seconds()
         transcript_ok = self._append_completed(
-            seq, target, argv, status.value, started_at, duration_s
+            seq, target, argv, status.value, started_at, duration_s, invocation
         )
         return ExecResult(
             status=status,
@@ -121,6 +145,7 @@ class ReadOnlyExecutor:
             seq=seq,
             transcript_ok=transcript_ok,
             detail=str(reason),
+            invocation=invocation,
         )
 
     def _append_completed(
@@ -131,6 +156,7 @@ class ReadOnlyExecutor:
         status: str,
         started_at: datetime,
         duration_s: float,
+        invocation: CommandInvocation | None,
     ) -> bool:
         entry = TranscriptEntry(
             seq=seq,
@@ -141,6 +167,7 @@ class ReadOnlyExecutor:
             status=status,
             started_at=started_at,
             duration_s=duration_s,
+            invocation=invocation,
         )
         try:
             self._transcript.append(entry)

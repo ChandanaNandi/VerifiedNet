@@ -13,6 +13,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from verifiednet.runtime.invocation import CommandInvocation
+
 
 class ExecStatus(StrEnum):
     """Terminal status of one executed (or denied) command."""
@@ -42,3 +44,8 @@ class ExecResult(BaseModel):
     seq: int = Field(ge=1)
     transcript_ok: bool = True
     detail: str = ""
+    #: Gate 4 (additive, optional): the logical/transport command identity when
+    #: this result came through a transport adapter. ``None`` for Gate 3-style
+    #: direct execution, so v0.3-serialized results still validate. When present,
+    #: ``argv`` equals ``invocation.transport_argv`` (what actually ran).
+    invocation: CommandInvocation | None = None

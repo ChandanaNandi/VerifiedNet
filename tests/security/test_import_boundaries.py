@@ -167,6 +167,30 @@ def test_guard_detects_os_system_fixture() -> None:
 
 
 @pytest.mark.security
+def test_guard_detects_lab_subprocess_bypass_fixture() -> None:
+    # A lab module must drive processes through verifiednet.runtime.process, the
+    # single subprocess boundary. A lab importing subprocess directly is a
+    # bypass and must be flagged regardless of the package it is scanned under.
+    path = VIOLATION_FIXTURES / "lab_imports_subprocess.py"
+    violations = scan_file(path, "labs")
+    assert any(v.rule == "subprocess-outside-runtime" for v in violations)
+
+
+@pytest.mark.security
+def test_real_labs_package_never_imports_subprocess() -> None:
+    # Guard the live Gate 4 labs backend/adapters: no module under labs/ may
+    # import subprocess; all process execution flows through the runtime.
+    pkg = SRC / "labs"
+    offenders = [
+        v
+        for path in sorted(pkg.rglob("*.py"))
+        for v in scan_file(path, "labs")
+        if v.rule == "subprocess-outside-runtime"
+    ]
+    assert offenders == [], "\n".join(f"{v.path}:{v.lineno} {v.detail}" for v in offenders)
+
+
+@pytest.mark.security
 def test_guard_detects_collector_mutation_import_fixture() -> None:
     path = VIOLATION_FIXTURES / "collector_imports_mutation.py"
     violations = scan_file(path, "collectors")
