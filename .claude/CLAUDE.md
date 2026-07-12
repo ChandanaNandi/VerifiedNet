@@ -12,7 +12,7 @@ history may have changed. **Inspect first, act second.**
 - Repository (local): `/Users/nandichandana/Downloads/VerifiedNet`
 - GitHub remote: `https://github.com/ChandanaNandi/VerifiedNet.git`
 - Branch: `main`
-- Gate 3 tag: `v0.3-gate3-complete` — must remain at commit `346da05`. Never move,
+- Gate 3 tag: `v0.3-gate3-complete` — must remain at commit `7d27463`. Never move,
   delete, recreate, or force-update it.
 - The GitHub release for `v0.3-gate3-complete` already exists. Never recreate or modify it
   unless explicitly requested.
@@ -110,7 +110,7 @@ Those belong to future gates.
 
 ## Current gate status
 
-- Gates 0–3: complete, released, tagged (`v0.3-gate3-complete` at `346da05`).
+- Gates 0–3: complete, released, tagged (`v0.3-gate3-complete` at `7d27463`).
 - Gate 4: approved but **not started**. Implement exactly the approved Gate 4 plan; do not
   redesign, expand, or move functionality between gates.
 - Gate 4 scope is only: live two-router FRR lab; accepted remote-AS-mismatch incident;
