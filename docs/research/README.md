@@ -10,7 +10,7 @@ scored ratings.
 
 These are **reference material** about the source repos — they are not part of
 the VerifiedNet package. They are the basis for the Gate 0–2 migration analysis
-under `../migration/`.
+under `../architecture/gate0/`, `../architecture/gate1/`, and `../architecture/gate2/`.
 
 | Audit | Source repo | Role in VerifiedNet |
 |---|---|---|
@@ -22,5 +22,5 @@ under `../migration/`.
 | `sonic-acl-validation-harness_AUDIT.md` | sonic-acl-validation-harness | SAI/ACL validation (Wave B) |
 | `constellation_AUDIT.md` | constellation | out of scope (CV project); reference only |
 
-See `../migration/code_reuse_matrix.md` and `../migration/wave_a_file_harvest_plan.md`
+See `../architecture/gate1/code_reuse_matrix.md` and `../architecture/gate2/wave_a_file_harvest_plan.md`
 for how these findings were turned into concrete reuse decisions.

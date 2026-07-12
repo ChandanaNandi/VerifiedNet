@@ -34,5 +34,12 @@ uv run pytest
 
 All Gate 3 tests run offline: fake runners, recorded fixtures, no Docker/FRR/services.
 
+## Documentation
+
+The full engineering record — architecture, decisions, research, provenance, and
+roadmap — lives in [`docs/`](docs/README.md). Start with `docs/README.md` for the map,
+`docs/roadmap/future-gates.md` for direction, and `docs/architecture/decisions/` for the
+load-bearing choices and their rationale.
+
 License: Apache-2.0 (see LICENSE, NOTICE). Provenance for adapted symbols:
 `docs/provenance/wave_a_provenance.md`.
