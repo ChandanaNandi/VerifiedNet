@@ -23,14 +23,18 @@ from typing import Protocol
 
 from verifiednet.common.runctx import RunContext
 from verifiednet.faults.bgp_neighbor_removal import BgpNeighborRemovalScenario
+from verifiednet.faults.bgp_prefix_withdrawal import BgpPrefixWithdrawalScenario
 from verifiednet.faults.bgp_remote_as_mismatch import BgpRemoteAsMismatchScenario
+from verifiednet.faults.iface_admin_shutdown import IfaceAdminShutdownScenario
 from verifiednet.faults.ledger import Ledger
 from verifiednet.faults.scenario import FaultScenario, MutationExec
 from verifiednet.labs.frr.scenario_evidence import NodePlan, PhasePlans
 from verifiednet.runtime.policy import (
     MutationCommandShape,
     bgp_neighbor_removal_mutation_shapes,
+    bgp_prefix_withdrawal_mutation_shapes,
     bgp_remote_as_mutation_shapes,
+    iface_admin_shutdown_mutation_shapes,
 )
 from verifiednet.schemas.evidence import EvidenceBundle, Phase
 from verifiednet.schemas.scenario import ScenarioDefinition
@@ -127,6 +131,75 @@ def _neighbor_removal_phase_plans(
     }
 
 
+def _iface_shutdown_phase_plans(
+    topology: TopologySpec, target_node: str, peer_node: str
+) -> PhasePlans:
+    """Evidence plans for the interface-shutdown family (probe-driven, pure data).
+
+    Onset is TARGET-side only: the probe showed the PEER stays Established
+    until its hold timer expires, so peer facts are collected at recovery. Each
+    ``route_absent`` sees the prefix on exactly one owning node. Config is
+    collected on the peer at onset (invariance) and on the target at recovery
+    (byte-identical restore).
+    """
+    target = topology.node(target_node)
+    peer = topology.node(peer_node)
+    full = ("bgp", "iface", "reach", "routes", "config")
+    all_loopbacks = (target.loopback, peer.loopback)
+    healthy = (
+        NodePlan(target_node, full, all_loopbacks),
+        NodePlan(peer_node, full, all_loopbacks),
+    )
+    return {
+        Phase.PRECONDITION: healthy,
+        Phase.BASELINE: healthy,
+        Phase.ONSET: (
+            NodePlan(target_node, ("bgp", "iface", "reach", "routes"), (peer.loopback,)),
+            NodePlan(peer_node, ("config",)),
+        ),
+        Phase.RECOVERY: (
+            NodePlan(target_node, full, all_loopbacks),
+            NodePlan(peer_node, ("bgp", "iface", "reach", "routes"), all_loopbacks),
+        ),
+    }
+
+
+def _prefix_withdrawal_phase_plans(
+    topology: TopologySpec, target_node: str, peer_node: str
+) -> PhasePlans:
+    """Evidence plans for the prefix-withdrawal family (pure data).
+
+    The session stays Established throughout, so BGP is collected on both nodes
+    in every phase. Route observation is split so ``route_absent(peer, T_lo)``
+    and ``route_present(target, P_lo)`` each see their prefix on exactly one
+    node. Config: peer at onset (invariance), target at recovery (byte-identical
+    restore).
+    """
+    target = topology.node(target_node)
+    peer = topology.node(peer_node)
+    full = ("bgp", "iface", "reach", "routes", "config")
+    all_loopbacks = (target.loopback, peer.loopback)
+    healthy = (
+        NodePlan(target_node, full, all_loopbacks),
+        NodePlan(peer_node, full, all_loopbacks),
+    )
+    return {
+        Phase.PRECONDITION: healthy,
+        Phase.BASELINE: healthy,
+        Phase.ONSET: (
+            # target: prove its own session up + the peer's advertisement still
+            # present locally (unrelated-route invariant).
+            NodePlan(target_node, ("bgp", "routes"), (peer.loopback,)),
+            # peer: prove the withdrawn prefix is absent, session up, config intact.
+            NodePlan(peer_node, ("bgp", "routes", "config"), (target.loopback,)),
+        ),
+        Phase.RECOVERY: (
+            NodePlan(target_node, full, all_loopbacks),
+            NodePlan(peer_node, ("bgp", "iface", "reach", "routes"), all_loopbacks),
+        ),
+    }
+
+
 REMOTE_AS_MISMATCH_BINDING = FaultFamilyBinding(
     template_id="bgp_remote_as_mismatch",
     root_cause="bgp_remote_as_mismatch",
@@ -145,10 +218,30 @@ BGP_NEIGHBOR_REMOVAL_BINDING = FaultFamilyBinding(
     build_phase_plans=_neighbor_removal_phase_plans,
 )
 
+IFACE_ADMIN_SHUTDOWN_BINDING = FaultFamilyBinding(
+    template_id="iface_admin_shutdown",
+    root_cause="iface_admin_shutdown",
+    generator="verifiednet.faults.iface_admin_shutdown",
+    build_scenario=IfaceAdminShutdownScenario,
+    mutation_shapes=iface_admin_shutdown_mutation_shapes,
+    build_phase_plans=_iface_shutdown_phase_plans,
+)
+
+BGP_PREFIX_WITHDRAWAL_BINDING = FaultFamilyBinding(
+    template_id="bgp_prefix_withdrawal",
+    root_cause="bgp_prefix_withdrawal",
+    generator="verifiednet.faults.bgp_prefix_withdrawal",
+    build_scenario=BgpPrefixWithdrawalScenario,
+    mutation_shapes=bgp_prefix_withdrawal_mutation_shapes,
+    build_phase_plans=_prefix_withdrawal_phase_plans,
+)
+
 #: The complete, hand-maintained set of approved family bindings.
 APPROVED_FAMILY_BINDINGS: tuple[FaultFamilyBinding, ...] = (
     REMOTE_AS_MISMATCH_BINDING,
     BGP_NEIGHBOR_REMOVAL_BINDING,
+    IFACE_ADMIN_SHUTDOWN_BINDING,
+    BGP_PREFIX_WITHDRAWAL_BINDING,
 )
 
 

@@ -31,6 +31,72 @@ def clear_bgp_argv(peer_ip: str) -> tuple[str, ...]:
     return ("vtysh", "-c", f"clear bgp {peer_ip}")
 
 
+def withdraw_network_argv(local_asn: int, prefix: str) -> tuple[str, ...]:
+    """Argv that withdraws one advertised IPv4-unicast prefix (Gate 5.4).
+
+    The BGP session stays Established throughout; only the advertisement of
+    *prefix* is removed, so the peer withdraws that route while everything else
+    (session, other routes, reachability) is unaffected.
+    """
+    return (
+        "vtysh",
+        "-c",
+        "configure terminal",
+        "-c",
+        f"router bgp {local_asn}",
+        "-c",
+        "address-family ipv4 unicast",
+        "-c",
+        f"no network {prefix}",
+    )
+
+
+def restore_network_argv(local_asn: int, prefix: str) -> tuple[str, ...]:
+    """Argv that re-advertises the withdrawn prefix, exactly as rendered."""
+    return (
+        "vtysh",
+        "-c",
+        "configure terminal",
+        "-c",
+        f"router bgp {local_asn}",
+        "-c",
+        "address-family ipv4 unicast",
+        "-c",
+        f"network {prefix}",
+    )
+
+
+def iface_shutdown_argv(iface: str) -> tuple[str, ...]:
+    """Argv that administratively shuts down *iface* via FRR (Gate 5.3).
+
+    Control point verified by the mandatory Gate 5.3 probe: FRR zebra drives
+    the kernel link admin-down (the container holds NET_ADMIN), so both
+    ``administrativeStatus`` and ``operationalStatus`` become ``down``.
+    """
+    return (
+        "vtysh",
+        "-c",
+        "configure terminal",
+        "-c",
+        f"interface {iface}",
+        "-c",
+        "shutdown",
+    )
+
+
+def iface_no_shutdown_argv(iface: str) -> tuple[str, ...]:
+    """Argv that reverts the administrative shutdown of *iface* (Gate 5.3)."""
+    return (
+        "vtysh",
+        "-c",
+        "configure terminal",
+        "-c",
+        f"interface {iface}",
+        "-c",
+        "no shutdown",
+    )
+
+
 def remove_neighbor_argv(local_asn: int, peer_ip: str) -> tuple[str, ...]:
     """Argv that removes the whole neighbor object under the local BGP router.
 

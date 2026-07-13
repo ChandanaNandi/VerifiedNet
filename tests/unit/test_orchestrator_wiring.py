@@ -31,6 +31,8 @@ from verifiednet.common.runctx import RunContext
 from verifiednet.labs.frr.topologies import two_router_frr_topology
 from verifiednet.orchestrator import (
     BGP_NEIGHBOR_REMOVAL_BINDING,
+    BGP_PREFIX_WITHDRAWAL_BINDING,
+    IFACE_ADMIN_SHUTDOWN_BINDING,
     REMOTE_AS_MISMATCH_BINDING,
     FaultFamilyBinding,
     LiveRunError,
@@ -82,14 +84,17 @@ class _Clock:
 class FrrLabSim:
     """Happy-path Docker+FRR simulator (a callable ``ProcessRunner``).
 
-    Models BOTH approved mutation families: the remote-AS value and the
-    neighbor object (presence + activation) on ``router_a``.
+    Models ALL FOUR approved mutation families on ``router_a``: the remote-AS
+    value, the neighbor object (presence + activation), the eth1 admin state,
+    and the advertised loopback prefix.
     """
 
     def __init__(self) -> None:
         self.a_remote_as = CORRECT_AS
         self.a_has_neighbor = True
         self.a_activated = True
+        self.eth1_up = True
+        self.a_advertised = True
         self._up = False
         self.mutation_targets: list[str] = []
 
@@ -102,7 +107,7 @@ class FrrLabSim:
     # -- FRR read responses -------------------------------------------------
     @property
     def _session_up(self) -> bool:
-        return self.a_has_neighbor and self.a_remote_as == CORRECT_AS
+        return self.a_has_neighbor and self.a_remote_as == CORRECT_AS and self.eth1_up
 
     @property
     def _routes_exchanged(self) -> bool:
@@ -116,7 +121,7 @@ class FrrLabSim:
                 return json.dumps({})
             peers = {
                 PEER_IP: {
-                    "state": "Established" if self._session_up else "Idle",
+                    "state": "Established" if self._session_up else "Active",
                     "remoteAs": self.a_remote_as,
                 }
             }
@@ -131,11 +136,14 @@ class FrrLabSim:
             local = 65002
         return json.dumps({"ipv4Unicast": {"as": local, "peers": peers}})
 
-    @staticmethod
-    def _interfaces() -> str:
+    def _interfaces(self, service: str) -> str:
+        if service == "router_a" and not self.eth1_up:
+            eth1 = {"administrativeStatus": "down", "operationalStatus": "down"}
+        else:
+            eth1 = {"administrativeStatus": "up", "operationalStatus": "up"}
         return json.dumps(
             {
-                "eth1": {"administrativeStatus": "up", "operationalStatus": "up"},
+                "eth1": eth1,
                 "lo": {"administrativeStatus": "up", "operationalStatus": "up"},
             }
         )
@@ -148,7 +156,8 @@ class FrrLabSim:
                 table["10.255.0.2/32"] = [{"protocol": "bgp"}]
         else:
             table["10.255.0.2/32"] = [{"protocol": "connected"}]
-            if self._routes_exchanged:
+            # peer sees router_a's loopback only if session up AND advertised
+            if self._routes_exchanged and self.a_advertised:
                 table["10.255.0.1/32"] = [{"protocol": "bgp"}]
         return json.dumps(table)
 
@@ -157,11 +166,15 @@ class FrrLabSim:
         # restored config is byte-identical to its baseline.
         if service != "router_a":
             return "hostname router_b\nrouter bgp 65002\n neighbor 172.30.0.1 remote-as 65001\n"
-        lines = ["hostname router_a", "router bgp 65001"]
+        lines = ["hostname router_a", "interface eth1", " ip address 172.30.0.1/30"]
+        if not self.eth1_up:
+            lines.append(" shutdown")
+        lines.append("router bgp 65001")
         if self.a_has_neighbor:
             lines.append(f" neighbor {PEER_IP} remote-as {self.a_remote_as}")
         lines.append(" address-family ipv4 unicast")
-        lines.append("  network 10.255.0.1/32")
+        if self.a_advertised:
+            lines.append("  network 10.255.0.1/32")
         if self.a_has_neighbor and self.a_activated:
             lines.append(f"  neighbor {PEER_IP} activate")
         lines.append(" exit-address-family")
@@ -173,6 +186,8 @@ class FrrLabSim:
 
     def _exec(self, service: str, logical: list[str]) -> RawResult:
         if logical and logical[0] == "ping":
+            if service == "router_a" and not self.eth1_up:
+                return RawResult(1, "0 received", "", False, False, False)
             return RawResult(0, "1 received", "", False, False, False)
         cmds = self._cmds(logical)
         first = cmds[0] if cmds else ""
@@ -180,7 +195,7 @@ class FrrLabSim:
             if first == "show ip bgp summary json":
                 return RawResult(0, self._bgp_summary(service), "", False, False, False)
             if first == "show interface json":
-                return RawResult(0, self._interfaces(), "", False, False, False)
+                return RawResult(0, self._interfaces(service), "", False, False, False)
             if first == "show ip route json":
                 return RawResult(0, self._routes(service), "", False, False, False)
             if first == "show running-config":
@@ -200,6 +215,14 @@ class FrrLabSim:
                 self.a_remote_as = int(c.split()[-1])
             elif c.startswith("neighbor") and c.endswith("activate"):
                 self.a_activated = True
+            elif c == "shutdown":
+                self.eth1_up = False
+            elif c == "no shutdown":
+                self.eth1_up = True
+            elif c.startswith("no network"):
+                self.a_advertised = False
+            elif c.startswith("network"):
+                self.a_advertised = True
         return RawResult(0, "", "", False, False, False)
 
     def __call__(
@@ -327,6 +350,94 @@ def test_accepted_and_rejected_share_one_index(tmp_path: Path) -> None:
     result = verify_run_index(out_root)
     assert result.verified is True
     assert len(result.checks) >= 2
+
+
+def _iface_scenario() -> ScenarioDefinition:
+    return ScenarioDefinition(
+        scenario_id="iface-admin-shutdown-2r-0001",
+        family="interface",
+        template_id="iface_admin_shutdown",
+        version=1,
+        parameters={"target_node": "router_a", "target_session": "a-b"},
+        timeouts=ScenarioTimeouts(
+            precondition_s=5.0, onset_s=3.0, recovery_s=3.0, command_s=10.0, poll_interval_s=0.5
+        ),
+    )
+
+
+def _prefix_scenario() -> ScenarioDefinition:
+    return ScenarioDefinition(
+        scenario_id="bgp-prefix-withdrawal-2r-0001",
+        family="bgp",
+        template_id="bgp_prefix_withdrawal",
+        version=1,
+        parameters={"target_node": "router_a", "target_session": "a-b"},
+        timeouts=ScenarioTimeouts(
+            precondition_s=5.0, onset_s=3.0, recovery_s=3.0, command_s=10.0, poll_interval_s=0.5
+        ),
+    )
+
+
+def test_iface_shutdown_run_through_binding(tmp_path: Path) -> None:
+    out_root = tmp_path / "runs"
+    result = _run_accepted(
+        out_root, "run-wire-if1", tmp_path,
+        binding=IFACE_ADMIN_SHUTDOWN_BINDING, scenario=_iface_scenario(),
+    )
+    record = result.assembled.loaded.incident
+    assert record.status == "accepted"
+    assert record.ground_truth is not None
+    assert record.ground_truth.root_cause_label == "iface_admin_shutdown"
+    assert record.fault is not None and record.fault.parameter_name == "admin_state"
+    assert any(
+        "config_unchanged:router_a" in v.check_id for v in record.ground_truth.verdicts
+    )
+    assert load_verified_run_from_index(out_root, "run-wire-if1").incident == record
+
+
+def test_prefix_withdrawal_run_through_binding(tmp_path: Path) -> None:
+    out_root = tmp_path / "runs"
+    result = _run_accepted(
+        out_root, "run-wire-pf1", tmp_path,
+        binding=BGP_PREFIX_WITHDRAWAL_BINDING, scenario=_prefix_scenario(),
+    )
+    record = result.assembled.loaded.incident
+    assert record.status == "accepted"
+    assert record.ground_truth is not None
+    assert record.ground_truth.root_cause_label == "bgp_prefix_withdrawal"
+    assert record.fault is not None and record.fault.parameter_name == "network"
+    # signature: session never dropped -> no forced reset; exactly 2 mutation pairs
+    assert record.restoration is not None and record.restoration.forced_reset_used is False
+    muts = [e for e in result.assembled.loaded.transcript if e.mode == "mutation"]
+    assert len([e for e in muts if e.stage == "pending"]) == 2
+    assert load_verified_run_from_index(out_root, "run-wire-pf1").incident == record
+
+
+def test_all_four_families_share_one_index(tmp_path: Path) -> None:
+    out_root = tmp_path / "runs"
+    _run_accepted(out_root, "run-x-ras", tmp_path)
+    _run_accepted(
+        out_root, "run-x-nr", tmp_path,
+        binding=BGP_NEIGHBOR_REMOVAL_BINDING, scenario=_nr_scenario(),
+    )
+    _run_accepted(
+        out_root, "run-x-if", tmp_path,
+        binding=IFACE_ADMIN_SHUTDOWN_BINDING, scenario=_iface_scenario(),
+    )
+    _run_accepted(
+        out_root, "run-x-pf", tmp_path,
+        binding=BGP_PREFIX_WITHDRAWAL_BINDING, scenario=_prefix_scenario(),
+    )
+    index = load_run_index(out_root)
+    assert {e.run_id: e.template_id for e in index.entries} == {
+        "run-x-ras": "bgp_remote_as_mismatch",
+        "run-x-nr": "bgp_neighbor_removal",
+        "run-x-if": "iface_admin_shutdown",
+        "run-x-pf": "bgp_prefix_withdrawal",
+    }
+    assert verify_run_index(out_root).verified is True
+    for run_id in ("run-x-ras", "run-x-nr", "run-x-if", "run-x-pf"):
+        assert load_verified_run_from_index(out_root, run_id).incident.status == "accepted"
 
 
 def test_neighbor_removal_run_through_binding(tmp_path: Path) -> None:

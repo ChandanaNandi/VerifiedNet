@@ -112,6 +112,12 @@ class CommandPolicy:
 #: Parameter fragments permitted only in explicitly-named positions of a shape.
 _IPV4 = r"(?:\d{1,3}\.){3}\d{1,3}"
 _ASN = r"\d{1,10}"
+#: Lab link interfaces only (topology pins ``ethN``); never free-form names.
+_IFACE = r"eth\d{1,3}"
+#: An IPv4 prefix in CIDR form (address + /length); the only prefix parameter.
+_PREFIX = r"(?:\d{1,3}\.){3}\d{1,3}/\d{1,2}"
+#: An exact IPv4 prefix (address/len) — the length is mandatory.
+_PREFIX = r"(?:\d{1,3}\.){3}\d{1,3}/\d{1,2}"
 
 
 @dataclass(frozen=True)
@@ -193,6 +199,69 @@ def bgp_neighbor_removal_mutation_shapes() -> tuple[MutationCommandShape, ...]:
         MutationCommandShape(
             name="clear_bgp",
             commands=(re.compile(rf"clear bgp {_IPV4}"),),
+        ),
+    )
+
+
+def iface_admin_shutdown_mutation_shapes() -> tuple[MutationCommandShape, ...]:
+    """The only three mutation shapes the interface-shutdown scenario is permitted.
+
+    Gate 5.3, FRR-mode (control point proven by the mandatory probe). The
+    interface parameter position accepts only lab link interfaces (``ethN``) —
+    never ``lo`` and never free-form names. ``clear_bgp`` is the same
+    forced-reset shape earlier families use, bounding re-establishment latency
+    after the link returns.
+    """
+    return (
+        MutationCommandShape(
+            name="iface_shutdown",
+            commands=(
+                re.compile(r"configure terminal"),
+                re.compile(rf"interface {_IFACE}"),
+                re.compile(r"shutdown"),
+            ),
+        ),
+        MutationCommandShape(
+            name="iface_no_shutdown",
+            commands=(
+                re.compile(r"configure terminal"),
+                re.compile(rf"interface {_IFACE}"),
+                re.compile(r"no shutdown"),
+            ),
+        ),
+        MutationCommandShape(
+            name="clear_bgp",
+            commands=(re.compile(rf"clear bgp {_IPV4}"),),
+        ),
+    )
+
+
+def bgp_prefix_withdrawal_mutation_shapes() -> tuple[MutationCommandShape, ...]:
+    """The only two mutation shapes the prefix-withdrawal scenario is permitted.
+
+    Gate 5.4. Both operate inside ``address-family ipv4 unicast``; the prefix
+    position accepts only a CIDR ``<IPv4>/<len>``. The BGP session is never
+    reset (it stays Established), so there is NO ``clear_bgp`` shape here — this
+    is the first family whose restoration issues no forced reset.
+    """
+    return (
+        MutationCommandShape(
+            name="withdraw_network",
+            commands=(
+                re.compile(r"configure terminal"),
+                re.compile(rf"router bgp {_ASN}"),
+                re.compile(r"address-family ipv4 unicast"),
+                re.compile(rf"no network {_PREFIX}"),
+            ),
+        ),
+        MutationCommandShape(
+            name="restore_network",
+            commands=(
+                re.compile(r"configure terminal"),
+                re.compile(rf"router bgp {_ASN}"),
+                re.compile(r"address-family ipv4 unicast"),
+                re.compile(rf"network {_PREFIX}"),
+            ),
         ),
     )
 

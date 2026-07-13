@@ -532,3 +532,320 @@ def neighbor_sim_cls() -> type[NeighborLabSim]:
 @pytest.fixture
 def build_neighbor_scenario():
     return build_neighbor_removal_scenario
+
+
+# --------------------------------------------------------------------------
+# Gate 5.3: interface-shutdown lab sim + builder (probe-driven behavior).
+# --------------------------------------------------------------------------
+
+IFACE_PEER_IP = "172.30.0.2"
+
+
+class IfaceLabSim:
+    """Deterministic lab: eth1 admin state on router_a is the mutable fault.
+
+    Probe-verified behavior: admin down => oper down => target session leaves
+    Established, ping fails, peer-loopback route withdrawn on the target. The
+    peer keeps Established during onset (hold timer) and is only re-checked at
+    recovery. ``fail_command`` injects per-command failures.
+    """
+
+    def __init__(self, *, fail_command=None) -> None:
+        self.eth1_up = True
+        self.fail_command = fail_command
+        self.mutation_targets: list[str] = []
+
+    @property
+    def session_up(self) -> bool:
+        return self.eth1_up
+
+    def _bgp_summary(self, service: str) -> str:
+        if service == "router_a":
+            peers = {IFACE_PEER_IP: {
+                "state": "Established" if self.eth1_up else "Active",
+                "remoteAs": 65002,
+            }}
+            local = 65001
+        else:
+            # peer holds Established while the target link is down (hold timer)
+            peers = {"172.30.0.1": {"state": "Established", "remoteAs": 65001}}
+            local = 65002
+        return _json.dumps({"ipv4Unicast": {"as": local, "peers": peers}})
+
+    def _interfaces(self, service: str) -> str:
+        if service == "router_a" and not self.eth1_up:
+            eth1 = {"administrativeStatus": "down", "operationalStatus": "down"}
+        else:
+            eth1 = {"administrativeStatus": "up", "operationalStatus": "up"}
+        return _json.dumps({
+            "eth1": eth1,
+            "lo": {"administrativeStatus": "up", "operationalStatus": "up"},
+        })
+
+    def _routes(self, service: str) -> str:
+        table: dict[str, list[dict[str, object]]] = {}
+        if service == "router_a":
+            table["10.255.0.1/32"] = [{"protocol": "connected"}]
+            if self.eth1_up:
+                table["10.255.0.2/32"] = [{"protocol": "bgp"}]
+        else:
+            table["10.255.0.2/32"] = [{"protocol": "connected"}]
+            if self.eth1_up:
+                table["10.255.0.1/32"] = [{"protocol": "bgp"}]
+        return _json.dumps(table)
+
+    def _running_config(self, service: str) -> str:
+        if service != "router_a":
+            return (
+                "frr version 8.4.1_git\nhostname router_b\nrouter bgp 65002\n"
+                " neighbor 172.30.0.1 remote-as 65001\n"
+            )
+        lines = ["frr version 8.4.1_git", "hostname router_a", "interface eth1"]
+        lines.append(" ip address 172.30.0.1/30")
+        if not self.eth1_up:
+            lines.append(" shutdown")
+        lines.append("router bgp 65001")
+        lines.append(f" neighbor {IFACE_PEER_IP} remote-as 65002")
+        return "\n".join(lines) + "\n"
+
+    def _ping(self, service: str) -> bool:
+        return self.eth1_up
+
+    @staticmethod
+    def _cmds(logical: list[str]) -> list[str]:
+        return [logical[i + 1] for i in range(len(logical)) if logical[i] == "-c"]
+
+    def __call__(self, argv, timeout_s, max_output_bytes):
+        from verifiednet.runtime.process import RawResult
+
+        a = list(argv)
+        exec_idx = a.index("exec")
+        service = a[exec_idx + 2]
+        logical = a[exec_idx + 3:]
+        cmds = self._cmds(logical)
+        if self.fail_command is not None and self.fail_command(cmds):
+            return RawResult(1, "", "vtysh: command failed", False, False, False)
+        if logical[0] == "ping":
+            if self._ping(service):
+                return RawResult(0, "1 received", "", False, False, False)
+            return RawResult(1, "0 received", "", False, False, False)
+        first = cmds[0] if cmds else ""
+        if first.startswith("show"):
+            if first == "show ip bgp summary json":
+                return RawResult(0, self._bgp_summary(service), "", False, False, False)
+            if first == "show interface json":
+                return RawResult(0, self._interfaces(service), "", False, False, False)
+            if first == "show ip route json":
+                return RawResult(0, self._routes(service), "", False, False, False)
+            if first == "show running-config":
+                return RawResult(0, self._running_config(service), "", False, False, False)
+            raise AssertionError(f"unexpected show: {first!r}")
+        self.mutation_targets.append(service)
+        for cmd in cmds:
+            if cmd == "shutdown":
+                self.eth1_up = False
+            elif cmd == "no shutdown":
+                self.eth1_up = True
+        return RawResult(0, "", "", False, False, False)
+
+
+def build_iface_shutdown_scenario(sim, run_ctx: RunContext, tmp_path):
+    from verifiednet.faults.iface_admin_shutdown import IfaceAdminShutdownScenario
+    from verifiednet.faults.ledger import Ledger
+    from verifiednet.labs.frr.backend import FrrComposeBackend
+    from verifiednet.labs.frr.scenario_evidence import LiveScenarioEvidenceProvider
+    from verifiednet.labs.frr.topologies import two_router_frr_topology
+    from verifiednet.orchestrator.families import _iface_shutdown_phase_plans
+    from verifiednet.runtime.policy import iface_admin_shutdown_mutation_shapes
+    from verifiednet.schemas import ScenarioDefinition, ScenarioTimeouts
+    from verifiednet.verifiers.claims import ClaimVerifier
+
+    scenario_definition = ScenarioDefinition(
+        scenario_id="iface-admin-shutdown-2r-0001", family="interface",
+        template_id="iface_admin_shutdown", version=1,
+        parameters={"target_node": "router_a", "target_session": "a-b"},
+        timeouts=ScenarioTimeouts(precondition_s=30.0, onset_s=30.0, recovery_s=60.0,
+                                  command_s=10.0, poll_interval_s=0.5),
+    )
+    topology = two_router_frr_topology()
+    backend = FrrComposeBackend(topology, run_ctx, work_dir=tmp_path, runner=sim)
+    provider = LiveScenarioEvidenceProvider(
+        executor=backend.readonly_executor, topology=topology, run_ctx=run_ctx,
+        target_node="router_a", peer_node="router_b",
+        phase_plans=_iface_shutdown_phase_plans(topology, "router_a", "router_b"),
+    )
+    mutation = backend.build_mutation_adapter(
+        allowed_targets=("router_a",), allowed_shapes=iface_admin_shutdown_mutation_shapes())
+    ledger = Ledger(run_ctx)
+
+    class _Clock:
+        def __init__(self): self.t = 0.0
+        def monotonic(self): return self.t
+        def sleep(self, s): self.t += s
+
+    clock = _Clock()
+    scenario = IfaceAdminShutdownScenario(
+        topology=topology, scenario=scenario_definition, mutation=mutation, ledger=ledger,
+        run_ctx=run_ctx, evidence_provider=provider, verifier=ClaimVerifier(run_ctx),
+        monotonic=clock.monotonic, sleep=clock.sleep)
+    return scenario, ledger, provider, backend
+
+
+@pytest.fixture
+def iface_sim_cls():
+    return IfaceLabSim
+
+
+@pytest.fixture
+def build_iface_scenario():
+    return build_iface_shutdown_scenario
+
+
+# --------------------------------------------------------------------------
+# Gate 5.4: prefix-withdrawal lab sim + builder. Session stays Established;
+# only the target's advertised loopback is withdrawn from the peer.
+# --------------------------------------------------------------------------
+
+PREFIX_PEER_IP = "172.30.0.2"
+PREFIX_TARGET_LOOPBACK = "10.255.0.1/32"
+
+
+class PrefixLabSim:
+    """Deterministic lab: the target's advertised loopback is the mutable state.
+
+    The BGP session never drops — only the peer's view of 10.255.0.1/32 changes.
+    ``fail_command`` injects per-command failures.
+    """
+
+    def __init__(self, *, fail_command=None) -> None:
+        self.advertised = True
+        self.fail_command = fail_command
+        self.mutation_targets: list[str] = []
+
+    def _bgp_summary(self, service: str) -> str:
+        # Session is Established on BOTH sides at all times.
+        if service == "router_a":
+            peers = {PREFIX_PEER_IP: {"state": "Established", "remoteAs": 65002}}
+            local = 65001
+        else:
+            peers = {"172.30.0.1": {"state": "Established", "remoteAs": 65001}}
+            local = 65002
+        return _json.dumps({"ipv4Unicast": {"as": local, "peers": peers}})
+
+    @staticmethod
+    def _interfaces() -> str:
+        return _json.dumps({
+            "eth1": {"administrativeStatus": "up", "operationalStatus": "up"},
+            "lo": {"administrativeStatus": "up", "operationalStatus": "up"},
+        })
+
+    def _routes(self, service: str) -> str:
+        table: dict[str, list[dict[str, object]]] = {}
+        if service == "router_a":
+            table["10.255.0.1/32"] = [{"protocol": "connected"}]
+            table["10.255.0.2/32"] = [{"protocol": "bgp"}]  # peer advert unaffected
+        else:
+            table["10.255.0.2/32"] = [{"protocol": "connected"}]
+            if self.advertised:
+                table["10.255.0.1/32"] = [{"protocol": "bgp"}]
+        return _json.dumps(table)
+
+    def _running_config(self, service: str) -> str:
+        if service != "router_a":
+            return (
+                "frr version 8.4.1_git\nhostname router_b\nrouter bgp 65002\n"
+                " address-family ipv4 unicast\n  network 10.255.0.2/32\n"
+            )
+        lines = ["frr version 8.4.1_git", "hostname router_a", "router bgp 65001",
+                 " address-family ipv4 unicast"]
+        if self.advertised:
+            lines.append("  network 10.255.0.1/32")
+        lines.append(f"  neighbor {PREFIX_PEER_IP} activate")
+        return "\n".join(lines) + "\n"
+
+    @staticmethod
+    def _cmds(logical: list[str]) -> list[str]:
+        return [logical[i + 1] for i in range(len(logical)) if logical[i] == "-c"]
+
+    def __call__(self, argv, timeout_s, max_output_bytes):
+        from verifiednet.runtime.process import RawResult
+
+        a = list(argv)
+        exec_idx = a.index("exec")
+        service = a[exec_idx + 2]
+        logical = a[exec_idx + 3:]
+        cmds = self._cmds(logical)
+        if self.fail_command is not None and self.fail_command(cmds):
+            return RawResult(1, "", "vtysh: command failed", False, False, False)
+        if logical[0] == "ping":
+            return RawResult(0, "1 received", "", False, False, False)  # link always up
+        first = cmds[0] if cmds else ""
+        if first.startswith("show"):
+            if first == "show ip bgp summary json":
+                return RawResult(0, self._bgp_summary(service), "", False, False, False)
+            if first == "show interface json":
+                return RawResult(0, self._interfaces(), "", False, False, False)
+            if first == "show ip route json":
+                return RawResult(0, self._routes(service), "", False, False, False)
+            if first == "show running-config":
+                return RawResult(0, self._running_config(service), "", False, False, False)
+            raise AssertionError(f"unexpected show: {first!r}")
+        self.mutation_targets.append(service)
+        for cmd in cmds:
+            if cmd.startswith("no network"):
+                self.advertised = False
+            elif cmd.startswith("network"):
+                self.advertised = True
+        return RawResult(0, "", "", False, False, False)
+
+
+def build_prefix_withdrawal_scenario(sim, run_ctx: RunContext, tmp_path):
+    from verifiednet.faults.bgp_prefix_withdrawal import BgpPrefixWithdrawalScenario
+    from verifiednet.faults.ledger import Ledger
+    from verifiednet.labs.frr.backend import FrrComposeBackend
+    from verifiednet.labs.frr.scenario_evidence import LiveScenarioEvidenceProvider
+    from verifiednet.labs.frr.topologies import two_router_frr_topology
+    from verifiednet.orchestrator.families import _prefix_withdrawal_phase_plans
+    from verifiednet.runtime.policy import bgp_prefix_withdrawal_mutation_shapes
+    from verifiednet.schemas import ScenarioDefinition, ScenarioTimeouts
+    from verifiednet.verifiers.claims import ClaimVerifier
+
+    scenario_definition = ScenarioDefinition(
+        scenario_id="bgp-prefix-withdrawal-2r-0001", family="bgp",
+        template_id="bgp_prefix_withdrawal", version=1,
+        parameters={"target_node": "router_a", "target_session": "a-b"},
+        timeouts=ScenarioTimeouts(precondition_s=30.0, onset_s=30.0, recovery_s=60.0,
+                                  command_s=10.0, poll_interval_s=0.5),
+    )
+    topology = two_router_frr_topology()
+    backend = FrrComposeBackend(topology, run_ctx, work_dir=tmp_path, runner=sim)
+    provider = LiveScenarioEvidenceProvider(
+        executor=backend.readonly_executor, topology=topology, run_ctx=run_ctx,
+        target_node="router_a", peer_node="router_b",
+        phase_plans=_prefix_withdrawal_phase_plans(topology, "router_a", "router_b"),
+    )
+    mutation = backend.build_mutation_adapter(
+        allowed_targets=("router_a",), allowed_shapes=bgp_prefix_withdrawal_mutation_shapes())
+    ledger = Ledger(run_ctx)
+
+    class _Clock:
+        def __init__(self): self.t = 0.0
+        def monotonic(self): return self.t
+        def sleep(self, s): self.t += s
+
+    clock = _Clock()
+    scenario = BgpPrefixWithdrawalScenario(
+        topology=topology, scenario=scenario_definition, mutation=mutation, ledger=ledger,
+        run_ctx=run_ctx, evidence_provider=provider, verifier=ClaimVerifier(run_ctx),
+        monotonic=clock.monotonic, sleep=clock.sleep)
+    return scenario, ledger, provider, backend
+
+
+@pytest.fixture
+def prefix_sim_cls():
+    return PrefixLabSim
+
+
+@pytest.fixture
+def build_prefix_scenario():
+    return build_prefix_withdrawal_scenario

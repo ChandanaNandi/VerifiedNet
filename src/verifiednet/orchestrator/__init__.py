@@ -12,6 +12,8 @@ from verifiednet.orchestrator.assembly import AssembledRun, assemble_verified_ru
 from verifiednet.orchestrator.families import (
     APPROVED_FAMILY_BINDINGS,
     BGP_NEIGHBOR_REMOVAL_BINDING,
+    BGP_PREFIX_WITHDRAWAL_BINDING,
+    IFACE_ADMIN_SHUTDOWN_BINDING,
     REMOTE_AS_MISMATCH_BINDING,
     FaultFamilyBinding,
     binding_for_template,
@@ -31,6 +33,8 @@ from verifiednet.orchestrator.manifests import (
 __all__ = [
     "APPROVED_FAMILY_BINDINGS",
     "BGP_NEIGHBOR_REMOVAL_BINDING",
+    "BGP_PREFIX_WITHDRAWAL_BINDING",
+    "IFACE_ADMIN_SHUTDOWN_BINDING",
     "REMOTE_AS_MISMATCH_BINDING",
     "AssembledRun",
     "FaultFamilyBinding",
