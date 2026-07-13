@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+from verifiednet.artifacts import load_run, verify_run_dir, write_run_artifacts
 from verifiednet.common.runctx import RunContext
 from verifiednet.faults.ledger import Ledger, LifecyclePhase
 from verifiednet.incidents.manifests import incident_to_json_bytes
@@ -62,6 +63,7 @@ def test_precondition_rejected_incident(
     unique_run_id: Callable[[str], str],
     project_containers: Callable[[str], list[str]],
     project_networks: Callable[[str], list[str]],
+    make_live_manifests: Callable[..., tuple],
 ) -> None:
     topology = two_router_frr_topology(image_ref=PINNED_FRR_IMAGE)
     run_ctx = RunContext(unique_run_id("it-rejected"))
@@ -123,6 +125,12 @@ def test_precondition_rejected_incident(
         assert _metric(baseline, "router_b", "config.sha256") == _metric(
             after, "router_b", "config.sha256"
         )
+        # build manifests + snapshot histories while the lab is still live
+        run_manifest, env_manifest = make_live_manifests(
+            backend, run_ctx, _scenario(), status="rejected"
+        )
+        transcript_snapshot = tuple(backend.transcript.entries)  # type: ignore[attr-defined]
+        ledger_snapshot = tuple(ledger.records)
     finally:
         backend.stop()
 
@@ -151,6 +159,23 @@ def test_precondition_rejected_incident(
     assert reparsed == record
     assert incident_to_json_bytes(record) == incident_to_json_bytes(reparsed)
 
-    out = tmp_path / "rejected_incident.json"
-    out.write_bytes(incident_to_json_bytes(record))
-    assert json.loads(out.read_text())["status"] == "rejected"
+    # -- canonical run artifact directory (Gate 4 Step 5) --------------------
+    runs_root = tmp_path / "runs"
+    written = write_run_artifacts(
+        out_root=runs_root,
+        run_manifest=run_manifest,
+        environment_manifest=env_manifest,
+        incident=record,
+        transcript_entries=transcript_snapshot,
+        ledger_records=ledger_snapshot,
+    )
+    result = verify_run_dir(written.root)
+    assert result.verified, [c.rule for c in result.failures]
+    loaded = load_run(written.root)
+    assert loaded.incident == record
+    assert loaded.incident.ground_truth is None  # rejected: no ground truth persisted
+    assert loaded.incident.fault is None
+    assert loaded.ledger == ()  # ledger stayed PENDING (no records)
+    assert [e for e in loaded.transcript if e.mode == "mutation"] == []  # zero mutation
+    assert set(r.value for r in loaded.evidence) == {"evidence_baseline"}  # baseline only
+    assert json.loads((written.root / "incident.json").read_text())["status"] == "rejected"

@@ -51,6 +51,22 @@ FORBIDDEN_IMPORTS: dict[str, tuple[str, ...]] = {
         "verifiednet.collectors",
         "verifiednet.faults",
     ),
+    # artifacts is low-level persistence: schemas + common + the PURE data
+    # models for transcript/ledger only. It must not import live execution
+    # behavior (runtime executors/process), labs, collectors, verifiers,
+    # incident builders/oracle, or scenario implementations.
+    "artifacts": (
+        "verifiednet.runtime.mutation",
+        "verifiednet.runtime.readonly",
+        "verifiednet.runtime.process",
+        "verifiednet.labs",
+        "verifiednet.collectors",
+        "verifiednet.verifiers",
+        "verifiednet.incidents",
+        "verifiednet.faults.bgp_remote_as_mismatch",
+        "verifiednet.faults.scenario",
+        "verifiednet.faults.frr_commands",
+    ),
 }
 
 
@@ -195,6 +211,25 @@ def test_guard_detects_collector_mutation_import_fixture() -> None:
     path = VIOLATION_FIXTURES / "collector_imports_mutation.py"
     violations = scan_file(path, "collectors")
     assert any(v.rule == "collectors-forbidden-import" for v in violations)
+
+
+@pytest.mark.security
+def test_guard_detects_artifacts_labs_import_fixture() -> None:
+    path = VIOLATION_FIXTURES / "artifacts_imports_labs.py"
+    violations = scan_file(path, "artifacts")
+    assert any(v.rule == "artifacts-forbidden-import" for v in violations)
+
+
+@pytest.mark.security
+def test_real_artifacts_package_stays_low_level() -> None:
+    pkg = SRC / "artifacts"
+    offenders = [
+        v
+        for path in sorted(pkg.rglob("*.py"))
+        for v in scan_file(path, "artifacts")
+        if "forbidden-import" in v.rule
+    ]
+    assert offenders == [], "\n".join(f"{v.path}:{v.lineno} {v.detail}" for v in offenders)
 
 
 @pytest.mark.security

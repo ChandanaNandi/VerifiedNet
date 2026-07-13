@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 
+from verifiednet.artifacts import load_run, verify_run_dir, write_run_artifacts
 from verifiednet.common.runctx import RunContext
 from verifiednet.faults.bgp_remote_as_mismatch import BgpRemoteAsMismatchScenario
 from verifiednet.faults.ledger import Ledger, LifecyclePhase
@@ -73,6 +74,7 @@ def test_accepted_live_remote_as_incident(
     unique_run_id: Callable[[str], str],
     project_containers: Callable[[str], list[str]],
     project_networks: Callable[[str], list[str]],
+    make_live_manifests: Callable[..., tuple],
 ) -> None:
     topology = two_router_frr_topology(image_ref=PINNED_FRR_IMAGE)
     scenario_def = _scenario()
@@ -189,6 +191,12 @@ def test_accepted_live_remote_as_incident(
             completed_phases=("precondition", "inject", "onset", "restore", "recovery"),
             cleanup_status="clean",
         )
+        # snapshot histories + build manifests while the lab is still live
+        run_manifest, env_manifest = make_live_manifests(
+            backend, run_ctx, scenario_def, status="accepted"
+        )
+        transcript_snapshot = tuple(backend.transcript.entries)  # type: ignore[attr-defined]
+        ledger_snapshot = tuple(ledger.records)
     finally:
         backend.stop()
 
@@ -221,7 +229,27 @@ def test_accepted_live_remote_as_incident(
     }
     assert all(e.target == "router_a" for e in entries)
 
-    # write the accepted record to a temporary Gate 4 output (not a canonical dir)
-    out = tmp_path / "accepted_incident.json"
-    out.write_bytes(incident_to_json_bytes(record))
-    assert json.loads(out.read_text())["status"] == "accepted"
+    # -- canonical run artifact directory (Gate 4 Step 5) --------------------
+    runs_root = tmp_path / "runs"
+    written = write_run_artifacts(
+        out_root=runs_root,
+        run_manifest=run_manifest,
+        environment_manifest=env_manifest,
+        incident=record,
+        transcript_entries=transcript_snapshot,
+        ledger_records=ledger_snapshot,
+    )
+    result = verify_run_dir(written.root)
+    assert result.verified, [c.rule for c in result.failures]
+    loaded = load_run(written.root)
+    assert loaded.incident == record  # loaded incident equals the original
+    assert loaded.run_digest == written.run_digest
+    assert loaded.ledger[-1].phase is LifecyclePhase.RECOVERY_VERIFIED
+    # every ground-truth evidence id resolves in the written evidence
+    written_ev = {r.evidence_id for b in loaded.evidence.values() for r in b.records}
+    assert record.ground_truth is not None
+    assert set(record.ground_truth.accepted_evidence_ids) <= written_ev
+    # mutation transcript survived round-trip, still paired
+    live_muts = [e for e in loaded.transcript if e.mode == "mutation"]
+    assert len(live_muts) == 6  # 3 pending + 3 completed
+    assert json.loads((written.root / "incident.json").read_text())["status"] == "accepted"
