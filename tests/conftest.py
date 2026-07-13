@@ -544,6 +544,44 @@ def separated_pipeline() -> Callable[..., object]:
     return _helper
 
 
+@pytest.fixture
+def eval_pipeline(separated_pipeline) -> Callable[..., object]:
+    """Build the full chain up to a written+loaded prepared corpus for Gate 7.
+
+    ``helper(tmp_path, accepted=[...], rejected=[...])`` returns an object with
+    ``.loaded`` (LoadedPrepared), ``.prepared_dir``, ``.run_root``,
+    ``.dataset_dir``, and ``.source_dataset_digest``.
+    """
+    from dataclasses import dataclass as _dc
+
+    from verifiednet.datasets import build_prepared, load_prepared, write_prepared
+
+    @_dc(frozen=True)
+    class _E:
+        loaded: object
+        prepared_dir: object
+        run_root: object
+        dataset_dir: object
+        source_dataset_digest: str
+
+    def _helper(tmp_path, *, accepted, rejected=(), policy=None):
+        ctx = separated_pipeline(tmp_path, accepted=accepted, rejected=rejected,
+                                 policy=policy)
+        prep = build_prepared(
+            ctx.separated, feature_policy=ctx.feature_policy,
+            label_policy=ctx.label_policy, dataset_version="v1",
+            source_index_digest=ctx.source_index_digest,
+            source_dataset_digest=ctx.dataset.manifest.dataset_digest)
+        prepared_dir = tmp_path / "prepared"
+        write_prepared(prep, prepared_dir)
+        loaded = load_prepared(prepared_dir)
+        return _E(loaded=loaded, prepared_dir=prepared_dir, run_root=ctx.run_root,
+                  dataset_dir=ctx.dataset_dir,
+                  source_dataset_digest=ctx.dataset.manifest.dataset_digest)
+
+    return _helper
+
+
 # --------------------------------------------------------------------------
 # Gate 5.2: deterministic neighbor-removal lab sim + builder, shared by the
 # unit and failure tiers (tests/ is not a package; shared helpers live here).

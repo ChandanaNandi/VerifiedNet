@@ -24,7 +24,7 @@ Gates run in dependency order. Completed Gates 0–4 are not renumbered.
 | 4 | First live verified incident (two-router FRR; accepted + precondition-rejected); artifacts, run index, composition root | 1 | **complete** |
 | 5 | Verified fault-family library: BGP remote-AS mismatch, neighbor removal, interface shutdown, prefix withdrawal; bounded scenario matrix; cross-family isolation | 1 | **complete** — see `../architecture/gate5/gate5-completion-report.md` |
 | 6 | Verified dataset engine and leakage-safe splits (incident corpus, provenance) | 2 | Gate 6.2 complete — 6.1 + Parts 2-4: read-only projection, rejected-as-abstention, deterministic integer-bucket splitting, fail-closed leakage audit, immutable exported dataset with self-validating `dataset_digest` + writer/reader/verifier + reproducibility, and feature/label/trace separation with a feature-leakage audit and the persisted "prepared" corpus. See `../architecture/gate6/feature-label-separation.md` |
-| 7 | Deterministic rule baselines and evaluation framework/infrastructure | 3 | planned |
+| 7 | Deterministic rule baselines and evaluation framework/infrastructure | 3 | **complete** — versioned task contract, model-free rule baselines (fixed-prior + evidence-rule) over a feature-only boundary, abstention-aware scoring, immutable content-addressed evaluation results with a recompute-from-records verifier and reproducibility/no-execution proofs (ADR-0019). See `../architecture/gate7/evaluation-framework.md` |
 | 8 | Base SLM benchmark | 3, 4 | planned |
 | 9 | Networking SLM fine-tuning (behind ModelAdapter) | 4 | planned |
 | 10 | Vector RAG and operational retrieval | 5 | planned |

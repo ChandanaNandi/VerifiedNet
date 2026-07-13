@@ -40,9 +40,15 @@ SUBPROCESS_ALLOWED = {SRC / "runtime" / "process.py"}
 ORCHESTRATOR_ROOT = "orchestrator"
 
 #: The read-only dataset engine (Gate 6). A top-level CONSUMER of verified run
-#: artifacts (ADR-0018): no other src package may import it, and it may not
-#: import the live composition root or any live-execution package.
+#: artifacts (ADR-0018): no other src package may import it EXCEPT the evaluation
+#: engine, and it may not import the live composition root or any live-execution
+#: package.
 DATASETS_ROOT = "datasets"
+
+#: The deterministic evaluation engine (Gate 7). It consumes the read-only
+#: dataset engine (the prepared corpus) but must not import the live composition
+#: root or any live-execution package, and no other src package may import it.
+EVALUATION_ROOT = "evaluation"
 
 # package -> forbidden import prefixes
 FORBIDDEN_IMPORTS: dict[str, tuple[str, ...]] = {
@@ -87,6 +93,20 @@ FORBIDDEN_IMPORTS: dict[str, tuple[str, ...]] = {
     # live composition root, the live lab, mutation/execution runtime, collectors,
     # verifiers, or scenario implementations — it never runs or re-derives a run.
     "datasets": (
+        "verifiednet.orchestrator",
+        "verifiednet.labs",
+        "verifiednet.collectors",
+        "verifiednet.verifiers",
+        "verifiednet.faults",
+        "verifiednet.runtime.mutation",
+        "verifiednet.runtime.readonly",
+        "verifiednet.runtime.process",
+    ),
+    # evaluation consumes the read-only dataset engine (Gate 7) but is itself a
+    # deterministic, offline CONSUMER: it must NOT import the live composition
+    # root, the live lab, mutation/execution runtime, collectors, verifiers, or
+    # scenario implementations — it never runs, re-derives, or trains anything.
+    "evaluation": (
         "verifiednet.orchestrator",
         "verifiednet.labs",
         "verifiednet.collectors",
@@ -144,13 +164,22 @@ def scan_file(path: Path, package: str | None) -> list[Violation]:
             violations.append(
                 Violation(str(path), lineno, "imports-orchestrator", module)
             )
-        # The read-only dataset engine may not be imported by anything else.
-        if package != DATASETS_ROOT and (
+        # The read-only dataset engine may not be imported by anything below it
+        # EXCEPT the evaluation engine (its one legitimate downstream consumer).
+        if package not in (DATASETS_ROOT, EVALUATION_ROOT) and (
             module == "verifiednet.datasets"
             or module.startswith("verifiednet.datasets.")
         ):
             violations.append(
                 Violation(str(path), lineno, "imports-datasets", module)
+            )
+        # The evaluation engine may not be imported by anything else (one-way flow).
+        if package != EVALUATION_ROOT and (
+            module == "verifiednet.evaluation"
+            or module.startswith("verifiednet.evaluation.")
+        ):
+            violations.append(
+                Violation(str(path), lineno, "imports-evaluation", module)
             )
 
     for node in ast.walk(tree):
@@ -337,13 +366,41 @@ def test_real_datasets_package_stays_read_only() -> None:
 
 @pytest.mark.security
 def test_no_lower_package_imports_datasets() -> None:
-    # No src package outside the dataset engine may import it (one-way flow).
+    # No src package outside the dataset engine may import it (one-way flow),
+    # except the evaluation engine which is its legitimate downstream consumer.
     offenders = [
         v
         for path in sorted(SRC.rglob("*.py"))
-        if _package_of(path) != DATASETS_ROOT
+        if _package_of(path) not in (DATASETS_ROOT, EVALUATION_ROOT)
         for v in scan_file(path, _package_of(path))
         if v.rule == "imports-datasets"
+    ]
+    assert offenders == [], "\n".join(f"{v.path}:{v.lineno} {v.detail}" for v in offenders)
+
+
+@pytest.mark.security
+def test_real_evaluation_package_stays_read_only() -> None:
+    pkg = SRC / "evaluation"
+    if not pkg.is_dir():
+        pytest.skip("evaluation package not present")
+    offenders = [
+        v
+        for path in sorted(pkg.rglob("*.py"))
+        for v in scan_file(path, "evaluation")
+        if "forbidden-import" in v.rule
+    ]
+    assert offenders == [], "\n".join(f"{v.path}:{v.lineno} {v.detail}" for v in offenders)
+
+
+@pytest.mark.security
+def test_no_lower_package_imports_evaluation() -> None:
+    # No src package outside the evaluation engine may import it (one-way flow).
+    offenders = [
+        v
+        for path in sorted(SRC.rglob("*.py"))
+        if _package_of(path) != EVALUATION_ROOT
+        for v in scan_file(path, _package_of(path))
+        if v.rule == "imports-evaluation"
     ]
     assert offenders == [], "\n".join(f"{v.path}:{v.lineno} {v.detail}" for v in offenders)
 

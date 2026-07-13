@@ -71,8 +71,17 @@ exist in `verifiednet.datasets` — a read-only, model-free projection that neve
 mutates a verified run; see
 `architecture/gate6/rejected-examples-and-leakage-safe-splits.md`,
 `architecture/gate6/exported-dataset-and-reproducibility.md`, and
-`architecture/gate6/feature-label-separation.md`. Layers 2–8 in
-`final-platform-vision.md` are **planned, not implemented** — no AI, RAG, GraphRAG, SLM,
+`architecture/gate6/feature-label-separation.md`.
+Gate 7 (deterministic evaluation framework) is implemented in
+`verifiednet.evaluation` with ADR-0019: a versioned evaluation-task contract,
+deterministic model-free rule baselines (a fixed-prior floor + an
+evidence-rule baseline) that receive ONLY model-visible features, abstention-aware
+scoring with separate accepted/abstention metrics, and an immutable,
+content-addressed evaluation result (manifest + records + metrics + confusion)
+with a self-validating `evaluation_digest`, a recompute-from-records verifier, and
+reproducibility/immutability/no-execution proofs. No model, LLM, embedding, or
+training is involved. See `architecture/gate7/evaluation-framework.md`. Layers 2–8
+in `final-platform-vision.md` are **planned, not implemented** — no AI, RAG, GraphRAG, SLM,
 agent, memory, or persistent workflow exists yet. The deterministic trust core (labs →
 faults → evidence → verification → oracle → incidents → recovery → artifacts → index) is
 fixed and is never replaced by a model. See `architecture/gate3/limitations.md`.
