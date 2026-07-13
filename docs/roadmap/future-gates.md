@@ -19,7 +19,7 @@ Gates run in dependency order. Completed Gates 0–4 are not renumbered.
 |---|---|---|---|
 | 0–3 | Verified foundation, offline: contracts, runtime, verifiers, fault lifecycle | 1 | **complete** |
 | 4 | First live verified incident (two-router FRR; accepted + precondition-rejected); artifacts, run index, composition root | 1 | **complete** |
-| 5 | More fault families and lab backends (SONiC-VS, EVPN/VXLAN, SR Linux; ACL/Batfish) | 1 | planned, next |
+| 5 | More fault families and lab backends (SONiC-VS, EVPN/VXLAN, SR Linux; ACL/Batfish) | 1 | planned, next — fault-family plan approved (Gate 5.0): see `../architecture/gate5/fault-family-plan.md` |
 | 6 | Verified dataset engine and leakage-safe splits (incident corpus, provenance) | 2 | planned |
 | 7 | Deterministic rule baselines and evaluation framework/infrastructure | 3 | planned |
 | 8 | Base SLM benchmark | 3, 4 | planned |
