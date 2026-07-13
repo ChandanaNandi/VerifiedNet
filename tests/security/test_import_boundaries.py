@@ -39,6 +39,11 @@ SUBPROCESS_ALLOWED = {SRC / "runtime" / "process.py"}
 #: may reference ``verifiednet.orchestrator``.
 ORCHESTRATOR_ROOT = "orchestrator"
 
+#: The read-only dataset engine (Gate 6). A top-level CONSUMER of verified run
+#: artifacts (ADR-0018): no other src package may import it, and it may not
+#: import the live composition root or any live-execution package.
+DATASETS_ROOT = "datasets"
+
 # package -> forbidden import prefixes
 FORBIDDEN_IMPORTS: dict[str, tuple[str, ...]] = {
     "schemas": (
@@ -76,6 +81,20 @@ FORBIDDEN_IMPORTS: dict[str, tuple[str, ...]] = {
         "verifiednet.faults.bgp_prefix_withdrawal",
         "verifiednet.faults.scenario",
         "verifiednet.faults.frr_commands",
+    ),
+    # datasets is a read-only consumer of verified run artifacts (ADR-0018): it
+    # reads schemas + common + the artifacts package only. It must NOT import the
+    # live composition root, the live lab, mutation/execution runtime, collectors,
+    # verifiers, or scenario implementations — it never runs or re-derives a run.
+    "datasets": (
+        "verifiednet.orchestrator",
+        "verifiednet.labs",
+        "verifiednet.collectors",
+        "verifiednet.verifiers",
+        "verifiednet.faults",
+        "verifiednet.runtime.mutation",
+        "verifiednet.runtime.readonly",
+        "verifiednet.runtime.process",
     ),
 }
 
@@ -124,6 +143,14 @@ def scan_file(path: Path, package: str | None) -> list[Violation]:
         ):
             violations.append(
                 Violation(str(path), lineno, "imports-orchestrator", module)
+            )
+        # The read-only dataset engine may not be imported by anything else.
+        if package != DATASETS_ROOT and (
+            module == "verifiednet.datasets"
+            or module.startswith("verifiednet.datasets.")
+        ):
+            violations.append(
+                Violation(str(path), lineno, "imports-datasets", module)
             )
 
     for node in ast.walk(tree):
@@ -283,6 +310,40 @@ def test_no_lower_package_imports_orchestrator() -> None:
         if _package_of(path) != ORCHESTRATOR_ROOT
         for v in scan_file(path, _package_of(path))
         if v.rule == "imports-orchestrator"
+    ]
+    assert offenders == [], "\n".join(f"{v.path}:{v.lineno} {v.detail}" for v in offenders)
+
+
+@pytest.mark.security
+def test_guard_detects_datasets_importing_orchestrator_fixture() -> None:
+    # The read-only dataset engine importing the live composition root inverts
+    # the one-way truth flow (ADR-0018) and must be flagged.
+    path = VIOLATION_FIXTURES / "datasets_imports_orchestrator.py"
+    violations = scan_file(path, "datasets")
+    assert any(v.rule == "datasets-forbidden-import" for v in violations)
+
+
+@pytest.mark.security
+def test_real_datasets_package_stays_read_only() -> None:
+    pkg = SRC / "datasets"
+    offenders = [
+        v
+        for path in sorted(pkg.rglob("*.py"))
+        for v in scan_file(path, "datasets")
+        if "forbidden-import" in v.rule
+    ]
+    assert offenders == [], "\n".join(f"{v.path}:{v.lineno} {v.detail}" for v in offenders)
+
+
+@pytest.mark.security
+def test_no_lower_package_imports_datasets() -> None:
+    # No src package outside the dataset engine may import it (one-way flow).
+    offenders = [
+        v
+        for path in sorted(SRC.rglob("*.py"))
+        if _package_of(path) != DATASETS_ROOT
+        for v in scan_file(path, _package_of(path))
+        if v.rule == "imports-datasets"
     ]
     assert offenders == [], "\n".join(f"{v.path}:{v.lineno} {v.detail}" for v in offenders)
 
