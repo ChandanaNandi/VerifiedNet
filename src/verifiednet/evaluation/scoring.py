@@ -28,6 +28,7 @@ from verifiednet.evaluation.contract import NormalizationPolicy
 from verifiednet.evaluation.prediction import (
     AbstentionPrediction,
     DiagnosisPrediction,
+    InvalidPrediction,
 )
 from verifiednet.schemas.base import StrictModel
 
@@ -41,6 +42,9 @@ class OutcomeCategory(StrEnum):
     ABSTAINED_ON_DIAGNOSIS = "abstained_on_diagnosis"
     CORRECT_ABSTENTION = "correct_abstention"
     FALSE_DIAGNOSIS_ON_REJECTED = "false_diagnosis_on_rejected"
+    #: A model-backed predictor produced malformed / unusable output (Gate 8).
+    #: Always incorrect, for both accepted and abstention examples.
+    INVALID_PREDICTION = "invalid_prediction"
 
 
 _CORRECT = frozenset(
@@ -59,12 +63,17 @@ def ratio_str(numerator: int, denominator: int) -> str | None:
 
 
 def score(
-    prediction: DiagnosisPrediction | AbstentionPrediction,
+    prediction: DiagnosisPrediction | AbstentionPrediction | InvalidPrediction,
     labels: AcceptedLabels | AbstentionLabels,
     *,
     normalization: NormalizationPolicy,
 ) -> tuple[OutcomeCategory, bool, str | None]:
     """Return (outcome_category, correct, mismatch_reason) for one example."""
+    if isinstance(prediction, InvalidPrediction):
+        # Invalid output is always incorrect, regardless of the label kind, and is
+        # never scored as a (correct) abstention on a rejected example.
+        return (OutcomeCategory.INVALID_PREDICTION, False,
+                f"invalid model output: {prediction.reason_code}")
     if isinstance(labels, AcceptedLabels):
         if isinstance(prediction, AbstentionPrediction):
             return (OutcomeCategory.ABSTAINED_ON_DIAGNOSIS, False,
@@ -97,7 +106,7 @@ class EvaluationRecord(StrictModel):
     run_id: str
     partition: DatasetPartition
     example_kind: DatasetExampleKind
-    prediction: DiagnosisPrediction | AbstentionPrediction = Field(
+    prediction: DiagnosisPrediction | AbstentionPrediction | InvalidPrediction = Field(
         discriminator="outcome_kind"
     )
     authoritative_target: str
@@ -122,7 +131,7 @@ def build_record(
     label_policy_id: str,
     labels: AcceptedLabels | AbstentionLabels,
     trace: DatasetTraceMetadata,
-    prediction: DiagnosisPrediction | AbstentionPrediction,
+    prediction: DiagnosisPrediction | AbstentionPrediction | InvalidPrediction,
     normalization: NormalizationPolicy,
 ) -> EvaluationRecord:
     category, correct, reason = score(prediction, labels, normalization=normalization)

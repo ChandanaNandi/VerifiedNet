@@ -80,8 +80,18 @@ scoring with separate accepted/abstention metrics, and an immutable,
 content-addressed evaluation result (manifest + records + metrics + confusion)
 with a self-validating `evaluation_digest`, a recompute-from-records verifier, and
 reproducibility/immutability/no-execution proofs. No model, LLM, embedding, or
-training is involved. See `architecture/gate7/evaluation-framework.md`. Layers 2–8
-in `final-platform-vision.md` are **planned, not implemented** — no AI, RAG, GraphRAG, SLM,
-agent, memory, or persistent workflow exists yet. The deterministic trust core (labs →
+training is involved. See `architecture/gate7/evaluation-framework.md`.
+Gate 8 (base SLM predictor benchmark) is implemented with ADR-0020: the first
+model-backed predictor (`verifiednet.evaluation.SlmPredictor`) plugs into the Gate 7
+evaluation framework through the SAME feature-only boundary as the rule baselines —
+it receives only `DatasetFeatures`, renders a versioned prompt, calls a pluggable
+inference backend, and strictly parses/validates/normalizes structured output into a
+prediction (malformed output becomes an explicit invalid prediction, never an
+exception). Offline CI stays completely model-free via a deterministic fake backend;
+a real local Ollama backend is exercised only by an optional integration test. The
+evaluation engine, records, metrics, and digests are unchanged. See
+`architecture/gate8/slm-predictor.md`. Layers beyond are **planned, not
+implemented** — no multi-model benchmarking, fine-tuning, RAG, GraphRAG, agent,
+memory, or persistent workflow exists yet. The deterministic trust core (labs →
 faults → evidence → verification → oracle → incidents → recovery → artifacts → index) is
 fixed and is never replaced by a model. See `architecture/gate3/limitations.md`.

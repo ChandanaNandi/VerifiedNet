@@ -30,6 +30,7 @@ from verifiednet.evaluation.contract import EvaluationTask, NormalizationPolicy
 from verifiednet.evaluation.prediction import (
     AbstentionPrediction,
     DiagnosisPrediction,
+    InvalidPrediction,
     verify_prediction_id,
 )
 from verifiednet.evaluation.scoring import (
@@ -69,6 +70,8 @@ def _recategorize(
     record: EvaluationRecord, normalization: NormalizationPolicy
 ) -> tuple[OutcomeCategory, bool]:
     pred = record.prediction
+    if isinstance(pred, InvalidPrediction):
+        return OutcomeCategory.INVALID_PREDICTION, False
     if record.example_kind is DatasetExampleKind.ACCEPTED_FAULT:
         if isinstance(pred, AbstentionPrediction):
             return OutcomeCategory.ABSTAINED_ON_DIAGNOSIS, False
@@ -109,8 +112,11 @@ def compute_accepted_partition_metrics(
             continue
         correct = sum(1 for r in members
                       if r.outcome_category is OutcomeCategory.CORRECT_DIAGNOSIS)
+        # Invalid model output is folded into the incorrect count (it is an
+        # incorrect diagnosis attempt); the metrics schema is unchanged.
         incorrect = sum(1 for r in members
-                        if r.outcome_category is OutcomeCategory.INCORRECT_DIAGNOSIS)
+                        if r.outcome_category in (OutcomeCategory.INCORRECT_DIAGNOSIS,
+                                                  OutcomeCategory.INVALID_PREDICTION))
         abstained = sum(1 for r in members
                         if r.outcome_category is OutcomeCategory.ABSTAINED_ON_DIAGNOSIS)
         out.append(AcceptedPartitionMetrics(
@@ -153,6 +159,8 @@ def compute_confusion(records: tuple[EvaluationRecord, ...]) -> tuple[ConfusionC
     for r in records:
         if r.example_kind is not DatasetExampleKind.ACCEPTED_FAULT:
             continue  # abstention examples never enter the accepted confusion matrix
+        if isinstance(r.prediction, InvalidPrediction):
+            continue  # invalid output is not a diagnosis/abstain outcome
         predicted = (r.prediction.fault_family
                      if isinstance(r.prediction, DiagnosisPrediction) else ABSTAIN_LABEL)
         counts[(r.authoritative_target, predicted)] += 1
