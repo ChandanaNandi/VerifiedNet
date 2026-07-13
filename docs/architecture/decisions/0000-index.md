@@ -27,6 +27,7 @@ implementation is deferred to the mapped future gates — see
 | 0014 | Persistent workflows and the outcome engine | Accepted (long-term) |
 | 0015 | Live FRR execution requirements: SYS_ADMIN, API config delivery, pinned interface names | Accepted |
 | 0016 | Canonical per-run artifact directory: durability + integrity contract | Accepted |
+| 0017 | Gate 4 composition root and run index | Accepted |
 
 Format for each record: **Status**, **Context**, **Decision**, **Consequences**,
 **References** (to the gate document or source that motivated it).

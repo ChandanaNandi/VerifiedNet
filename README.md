@@ -3,10 +3,12 @@
 An open platform for building, verifying, benchmarking, and evaluating AI systems for
 computer networks.
 
-**Status: Gate 3 — architecture and offline behavior only.** No live network has been
-executed. Parser fixtures are source-derived until Gate 4 re-records them against a live
-FRR lab. No AI capability exists yet. No performance or correctness claim about live FRR
-has been established.
+**Status: Gate 4 complete — first live verified incidents.** A two-router FRR eBGP lab is
+executed live: one accepted remote-AS-mismatch incident and one deliberately-rejected
+precondition incident, each with real deterministic evidence, restoration and cleanup,
+canonical per-run artifacts, a run index, and a thin composition root. No AI capability
+exists yet, and no model participates in producing ground truth. Live claims are recorded
+only from reproducible runs on the canonical host.
 
 Core thesis: verified, reproducible networking incidents and standardized evaluation for
 networking AI. Ground truth comes exclusively from injected-fault metadata and
@@ -17,11 +19,13 @@ deterministic verifiers — never from a model.
 - `src/verifiednet/schemas` — versioned, DB-free data contracts (Pydantic v2, strict)
 - `src/verifiednet/common` — canonical JSON, hashing, ids/RunContext, logging, errors
 - `src/verifiednet/runtime` — bounded argv-only execution, policies, transcripts
-- `src/verifiednet/labs` — LabBackend interface + FRR topology rendering (not executed)
+- `src/verifiednet/labs` — LabBackend interface + live two-router FRR Compose backend
 - `src/verifiednet/collectors` — read-only FRR evidence collectors (fake-runner tested)
 - `src/verifiednet/verifiers` — pure claim verification and deterministic checks
 - `src/verifiednet/faults` — fault lifecycle, phase-guarded ledger, BGP ASN-mismatch spec
 - `src/verifiednet/incidents` — ground-truth oracle, IncidentRecord builder, manifests
+- `src/verifiednet/artifacts` — canonical per-run artifact directory, integrity verifier, run index
+- `src/verifiednet/orchestrator` — thin Gate 4 composition root (assemble, index, run both live paths)
 
 ## Development
 
@@ -32,7 +36,9 @@ uv run mypy
 uv run pytest
 ```
 
-All Gate 3 tests run offline: fake runners, recorded fixtures, no Docker/FRR/services.
+The offline suite runs anywhere (fake runners, fixtures, no Docker/FRR/services); the live
+integration tier auto-skips without a Docker daemon and runs against the pinned FRR image
+on the canonical host (`uv run pytest -m integration`).
 
 ## Documentation
 

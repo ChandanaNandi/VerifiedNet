@@ -16,13 +16,13 @@ the directory is never reported complete.
 
 from __future__ import annotations
 
-import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from pydantic import BaseModel
 
+from verifiednet.artifacts.durable import atomic_write_bytes, fsync_dir
 from verifiednet.artifacts.layout import (
     EVIDENCE_DIR,
     HASH_INDEX_FILE,
@@ -63,29 +63,6 @@ class WrittenRun:
     run_digest: str
     file_count: int
     index: ArtifactHashIndex
-
-
-def _fsync_dir(path: Path) -> None:
-    try:
-        fd = os.open(path, os.O_RDONLY)
-    except OSError:  # pragma: no cover - platforms without dir fds
-        return
-    try:
-        os.fsync(fd)
-    except OSError:  # pragma: no cover
-        pass
-    finally:
-        os.close(fd)
-
-
-def _atomic_write(path: Path, data: bytes) -> None:
-    tmp = path.with_name(path.name + ".tmp")
-    with tmp.open("wb") as handle:
-        handle.write(data)
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(tmp, path)
-    _fsync_dir(path.parent)
 
 
 def _jsonl_bytes(items: Sequence[BaseModel]) -> bytes:
@@ -149,7 +126,7 @@ def write_run_artifacts(
     (root / EVIDENCE_DIR).mkdir(exist_ok=True)
     marker = root / INCOMPLETE_MARKER
     marker.write_bytes(b"incomplete\n")
-    _fsync_dir(root)
+    fsync_dir(root)
 
     try:
         present = _canonical_files(incident)
@@ -188,7 +165,7 @@ def write_run_artifacts(
 
         # write every truth-bearing file (JSONL via finalization = same atomic install)
         for role, rel in present.items():
-            _atomic_write(root / rel, payloads[role])
+            atomic_write_bytes(root / rel, payloads[role])
 
         # hash index over final bytes, then run digest, then hashes.json
         hashes = tuple(
@@ -202,7 +179,7 @@ def write_run_artifacts(
         )
         digest = compute_run_digest(hashes)
         index = ArtifactHashIndex(run_id=run_id, run_digest=digest, entries=hashes)
-        _atomic_write(root / HASH_INDEX_FILE, canonical_json_bytes(index))
+        atomic_write_bytes(root / HASH_INDEX_FILE, canonical_json_bytes(index))
 
         # independent verification BEFORE declaring the run complete
         result = verify_run_dir(root, allow_incomplete_marker=True)
@@ -211,13 +188,13 @@ def write_run_artifacts(
                 "post-write verification failed: "
                 + "; ".join(f"{c.rule}: {c.detail}" for c in result.failures)
             )
-        _atomic_write(root / VERIFICATION_REPORT_FILE, canonical_json_bytes(result))
+        atomic_write_bytes(root / VERIFICATION_REPORT_FILE, canonical_json_bytes(result))
     except Exception:
         # Leave .INCOMPLETE in place; never report the directory as complete.
         raise
 
     marker.unlink()
-    _fsync_dir(root)
+    fsync_dir(root)
     file_count = sum(1 for p in root.rglob("*") if p.is_file())
     return WrittenRun(
         root=root, run_id=run_id, run_digest=digest, file_count=file_count, index=index

@@ -1,9 +1,11 @@
 # VerifiedNet — Roadmap (Future Gates)
 
 The platform is built in strict gates. Gates 0–3 are complete (offline architecture and
-contracts, 238 tests). Gate 4 is planned and approved (first live incident). Everything
-from Gate 4 onward is **planned and not yet implemented** — listed here so the trajectory
-is explicit. No capability is assumed to exist until its gate ships and is tested.
+contracts). Gate 4 is complete: the first live verified incidents (two-router FRR;
+accepted + precondition-rejected), canonical artifacts, run index, and a thin composition
+root. Everything from Gate 5 onward is **planned and not yet implemented** — listed here so
+the trajectory is explicit. No capability is assumed to exist until its gate ships and is
+tested.
 
 This roadmap is coordinated with `../architecture/final-platform-vision.md`, which defines
 the eight architectural layers and the immutable deterministic trust core. The layers are
@@ -16,8 +18,8 @@ Gates run in dependency order. Completed Gates 0–4 are not renumbered.
 | Gate | Focus | Layer(s) | Status |
 |---|---|---|---|
 | 0–3 | Verified foundation, offline: contracts, runtime, verifiers, fault lifecycle | 1 | **complete** |
-| 4 | First live verified incident (two-router FRR; accepted + precondition-rejected) | 1 | approved, next |
-| 5 | More fault families and lab backends (SONiC-VS, EVPN/VXLAN, SR Linux; ACL/Batfish) | 1 | planned |
+| 4 | First live verified incident (two-router FRR; accepted + precondition-rejected); artifacts, run index, composition root | 1 | **complete** |
+| 5 | More fault families and lab backends (SONiC-VS, EVPN/VXLAN, SR Linux; ACL/Batfish) | 1 | planned, next |
 | 6 | Verified dataset engine and leakage-safe splits (incident corpus, provenance) | 2 | planned |
 | 7 | Deterministic rule baselines and evaluation framework/infrastructure | 3 | planned |
 | 8 | Base SLM benchmark | 3, 4 | planned |
@@ -49,13 +51,14 @@ project brief). The intentional changes, adopted per the owner's coordination ch
 
 No other change was required by existing project evidence.
 
-## Immediate next: Gate 4 (unchanged)
+## Gate 4 (complete)
 
-Gate 4 remains exactly: one live two-router FRR lab; one accepted remote-AS-mismatch
+Gate 4 delivered exactly: one live two-router FRR lab; one accepted remote-AS-mismatch
 incident; one healthy-lab precondition-rejected incident; real evidence; deterministic
-verification; restoration and cleanup; manifests and artifacts. **No model, RAG, GraphRAG,
-memory, agents, or persistent workflow.** See the approved Gate 4 plan; its scope is not
-expanded by this roadmap.
+verification; restoration and cleanup; manifests, canonical per-run artifacts, a run index,
+and a thin composition root that executes both paths. **No model, RAG, GraphRAG, memory,
+agents, or persistent workflow.** See `../architecture/gate4/gate4-completion-report.md`;
+its scope was not expanded. Gate 5 is next and does not renumber earlier gates.
 
 ## Standing rules across all future gates
 

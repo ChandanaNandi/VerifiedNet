@@ -48,9 +48,11 @@ docs/
 
 ## Status
 
-Gates 0–3 complete (offline architecture and contracts; 238 tests). Gate 4 (first live
-incident) is approved and next. Layers 2–8 in `final-platform-vision.md` are **planned,
-not implemented** — no AI, RAG, GraphRAG, SLM, agent, memory, or persistent workflow
-exists yet. The deterministic trust core (labs → faults → evidence → verification →
-oracle → incidents → recovery → artifacts) is fixed and is never replaced by a model.
-See `architecture/gate3/limitations.md`.
+Gates 0–3 complete (offline architecture and contracts). Gate 4 complete: the first live
+verified incidents (two-router FRR; accepted + precondition-rejected), canonical per-run
+artifacts, a run index, and a thin composition root — see
+`architecture/gate4/gate4-completion-report.md`. Gate 5 is next. Layers 2–8 in
+`final-platform-vision.md` are **planned, not implemented** — no AI, RAG, GraphRAG, SLM,
+agent, memory, or persistent workflow exists yet. The deterministic trust core (labs →
+faults → evidence → verification → oracle → incidents → recovery → artifacts → index) is
+fixed and is never replaced by a model. See `architecture/gate3/limitations.md`.

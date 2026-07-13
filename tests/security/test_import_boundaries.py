@@ -11,6 +11,8 @@ Policy enforced (Gate 3):
   executor types) nor ``verifiednet.faults``.
 - ``verifiers`` may not import ``runtime``, ``labs`` or ``collectors``.
 - ``incidents`` may not import ``runtime``, ``labs``, ``collectors`` or ``faults``.
+- ``orchestrator`` is the top composition root: NO other package may import it
+  (the dependency arrow only points down into it, never out of it).
 - ``subprocess`` may only be imported by ``verifiednet/runtime/process.py``.
 - No ``shell=True`` anywhere under ``src/``.
 - No ``os.system`` calls anywhere under ``src/``.
@@ -31,6 +33,11 @@ SRC = Path(__file__).resolve().parents[2] / "src" / "verifiednet"
 VIOLATION_FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "security_violations"
 
 SUBPROCESS_ALLOWED = {SRC / "runtime" / "process.py"}
+
+#: The composition root. Every other package is "below" it and must not import
+#: it; only the orchestrator package itself (and test/tooling code outside src)
+#: may reference ``verifiednet.orchestrator``.
+ORCHESTRATOR_ROOT = "orchestrator"
 
 # package -> forbidden import prefixes
 FORBIDDEN_IMPORTS: dict[str, tuple[str, ...]] = {
@@ -107,6 +114,14 @@ def scan_file(path: Path, package: str | None) -> list[Violation]:
                     violations.append(
                         Violation(str(path), lineno, f"{package}-forbidden-import", module)
                     )
+        # The composition root may not be imported by anything below it.
+        if package != ORCHESTRATOR_ROOT and (
+            module == "verifiednet.orchestrator"
+            or module.startswith("verifiednet.orchestrator.")
+        ):
+            violations.append(
+                Violation(str(path), lineno, "imports-orchestrator", module)
+            )
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
@@ -228,6 +243,43 @@ def test_real_artifacts_package_stays_low_level() -> None:
         for path in sorted(pkg.rglob("*.py"))
         for v in scan_file(path, "artifacts")
         if "forbidden-import" in v.rule
+    ]
+    assert offenders == [], "\n".join(f"{v.path}:{v.lineno} {v.detail}" for v in offenders)
+
+
+@pytest.mark.security
+def test_guard_detects_lower_package_importing_orchestrator_fixture() -> None:
+    # A lower package (here scanned as ``labs``) importing the composition root
+    # inverts the dependency arrow and must be flagged.
+    path = VIOLATION_FIXTURES / "labs_imports_orchestrator.py"
+    violations = scan_file(path, "labs")
+    assert any(v.rule == "imports-orchestrator" for v in violations)
+
+
+@pytest.mark.security
+def test_orchestrator_may_import_itself() -> None:
+    # The composition root wires the layers together; internal imports within
+    # the orchestrator package must NOT be flagged as boundary violations.
+    pkg = SRC / "orchestrator"
+    offenders = [
+        v
+        for path in sorted(pkg.rglob("*.py"))
+        for v in scan_file(path, "orchestrator")
+        if v.rule == "imports-orchestrator"
+    ]
+    assert offenders == []
+
+
+@pytest.mark.security
+def test_no_lower_package_imports_orchestrator() -> None:
+    # Guard the real source tree: no package below the composition root may
+    # import ``verifiednet.orchestrator``.
+    offenders = [
+        v
+        for path in sorted(SRC.rglob("*.py"))
+        if _package_of(path) != ORCHESTRATOR_ROOT
+        for v in scan_file(path, _package_of(path))
+        if v.rule == "imports-orchestrator"
     ]
     assert offenders == [], "\n".join(f"{v.path}:{v.lineno} {v.detail}" for v in offenders)
 

@@ -1,44 +1,33 @@
-"""Live accepted BGP remote-AS-mismatch incident — the Gate 4 Step 3 slice.
+"""Live accepted BGP remote-AS-mismatch incident, through the Gate 4 composition root.
 
-Drives ONE real incident end to end against the live two-router lab:
-healthy convergence -> preconditions -> inject (wrong-AS on router_a) ->
-onset verification -> restore -> recovery verification -> GroundTruth ->
-accepted IncidentRecord -> verified cleanup. Nested try/finally guarantees
-restoration (if injected) and teardown even on failure. No mutation ever
-targets router_b (runtime TargetPolicy), and no accepted record is built unless
-the ledger reaches RECOVERY_VERIFIED with every verdict committable.
+Drives ONE real incident end to end via the PRODUCTION entry point
+``run_accepted_incident`` (not hand-wired in the test): healthy convergence ->
+preconditions -> inject (wrong-AS on router_a) -> onset -> restore -> recovery ->
+GroundTruth -> accepted IncidentRecord -> canonical run directory -> run index ->
+verified cleanup. The composition root owns restoration-on-failure and teardown;
+this test asserts on the assembled, indexed, reload-through-index result plus an
+independent host-side zero-resource proof.
 """
 
 from __future__ import annotations
 
-import json
-import time
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
-from verifiednet.artifacts import load_run, verify_run_dir, write_run_artifacts
+from verifiednet.artifacts import load_verified_run_from_index, verify_run_index
+from verifiednet.common.hashing import sha256_file
 from verifiednet.common.runctx import RunContext
-from verifiednet.faults.bgp_remote_as_mismatch import BgpRemoteAsMismatchScenario
-from verifiednet.faults.ledger import Ledger, LifecyclePhase
-from verifiednet.incidents.builder import build_accepted_record
+from verifiednet.faults.ledger import LifecyclePhase
 from verifiednet.incidents.manifests import incident_to_json_bytes
-from verifiednet.incidents.oracle import ORACLE_VERSION, build_ground_truth
-from verifiednet.labs.frr.backend import FrrComposeBackend
-from verifiednet.labs.frr.convergence import wait_for_bgp_established
-from verifiednet.labs.frr.scenario_evidence import LiveScenarioEvidenceProvider
+from verifiednet.labs.frr.compose_project import project_name_for_run
 from verifiednet.labs.frr.topologies import PINNED_FRR_IMAGE, two_router_frr_topology
-from verifiednet.runtime.policy import bgp_remote_as_mutation_shapes
+from verifiednet.orchestrator import run_accepted_incident
 from verifiednet.runtime.process import default_runner
-from verifiednet.schemas import IncidentRecord, ProvenanceInfo, ScenarioDefinition, ScenarioTimeouts
-from verifiednet.schemas.evidence import EvidenceBundle, Phase
-from verifiednet.verifiers.claims import ClaimVerifier
+from verifiednet.schemas import IncidentRecord, ScenarioDefinition, ScenarioTimeouts
 
 pytestmark = pytest.mark.integration
-
-PEER_IP = "172.30.0.2"
-ROOT_CAUSE = "bgp_remote_as_mismatch"
 
 
 def _scenario() -> ScenarioDefinition:
@@ -54,202 +43,71 @@ def _scenario() -> ScenarioDefinition:
     )
 
 
-def _config_sha(bundle: EvidenceBundle, target: str) -> str:
-    for record in bundle.records:
-        if record.source.target == target and "config.sha256" in record.normalized:
-            return str(record.normalized["config.sha256"])
-    raise AssertionError(f"no config.sha256 for {target} in bundle")
-
-
-def _route_present(bundle: EvidenceBundle, target: str, prefix: str) -> str:
-    key = f"route.{prefix}.present"
-    for record in bundle.records:
-        if record.source.target == target and key in record.normalized:
-            return str(record.normalized[key])
-    raise AssertionError(f"no {key} for {target}")
-
-
 def test_accepted_live_remote_as_incident(
     tmp_path: Path,
     unique_run_id: Callable[[str], str],
     project_containers: Callable[[str], list[str]],
     project_networks: Callable[[str], list[str]],
-    make_live_manifests: Callable[..., tuple],
 ) -> None:
     topology = two_router_frr_topology(image_ref=PINNED_FRR_IMAGE)
-    scenario_def = _scenario()
-    run_ctx = RunContext(unique_run_id("it-incident"))
+    run_id = unique_run_id("it-incident")
+    project = project_name_for_run(run_id)
     commit = default_runner(["git", "rev-parse", "HEAD"], 10.0, 4096).stdout.strip() or "unknown"
-    backend = FrrComposeBackend(topology, run_ctx, work_dir=tmp_path)
-    project = backend.project_name
+    lock = Path("uv.lock")
+    lock_hash = sha256_file(lock) if lock.is_file() else "0" * 64
+    out_root = tmp_path / "runs"
 
-    provider = LiveScenarioEvidenceProvider(
-        executor=backend.readonly_executor,
+    result = run_accepted_incident(
+        out_root=out_root,
+        work_dir=tmp_path / "lab",
+        run_ctx=RunContext(run_id),
         topology=topology,
-        run_ctx=run_ctx,
-        target_node="router_a",
-        peer_node="router_b",
+        scenario=_scenario(),
+        git_rev=commit,
+        lock_hash=lock_hash,
+        convergence_timeout_s=60.0,
     )
-    mutation = backend.build_mutation_adapter(
-        allowed_targets=("router_a",), allowed_shapes=bgp_remote_as_mutation_shapes()
-    )
-    ledger = Ledger(run_ctx)
-    scenario = BgpRemoteAsMismatchScenario(
-        topology=topology,
-        scenario=scenario_def,
-        mutation=mutation,
-        ledger=ledger,
-        run_ctx=run_ctx,
-        evidence_provider=provider,
-        verifier=ClaimVerifier(run_ctx),
-        monotonic=time.monotonic,
-        sleep=time.sleep,
-    )
-
-    record: IncidentRecord | None = None
-    try:
-        backend.start()
-        healthy = wait_for_bgp_established(backend.readonly_executor, topology)
-        assert healthy.converged
-
-        baseline_bundle = provider(Phase.BASELINE)[0]
-        try:
-            pre_results = scenario.validate_preconditions()
-            assert ledger.current is LifecyclePhase.PRECHECKED
-
-            fault = scenario.inject()
-            assert ledger.current is LifecyclePhase.INJECTED
-            assert (fault.before_value, fault.after_value) == ("65002", "65999")
-            assert fault.target_node == "router_a"
-
-            onset_results = scenario.verify_onset()
-            assert ledger.current is LifecyclePhase.ONSET_VERIFIED
-            onset_bundle = provider(Phase.ONSET)[0]
-            # wrong-AS observed live; peer loopback route withdrawn on router_a
-            assert _route_present(onset_bundle, "router_a", "10.255.0.2/32") == "false"
-
-            restoration = scenario.restore()
-            assert ledger.current is LifecyclePhase.RESTORED
-            recovery_results = scenario.verify_recovery()
-            assert ledger.current is LifecyclePhase.RECOVERY_VERIFIED
-            recovery_bundle = provider(Phase.RECOVERY)[0]
-        finally:
-            # If we injected and did not reach a verified recovery, restore now.
-            if ledger.current in (
-                LifecyclePhase.INJECTING,
-                LifecyclePhase.INJECTED,
-                LifecyclePhase.ONSET_VERIFIED,
-            ):
-                scenario.restore()
-
-        # -- acceptance gate: only build when fully verified & committable ----
-        all_results = (*pre_results, *onset_results, *recovery_results)
-        assert ledger.current is LifecyclePhase.RECOVERY_VERIFIED
-        assert all(r.committable for r in all_results), [
-            (r.check_id, r.verdict) for r in all_results if not r.committable
-        ]
-
-        # peer config unchanged; target config restored to baseline-equivalent
-        assert _config_sha(baseline_bundle, "router_b") == _config_sha(recovery_bundle, "router_b")
-        assert _config_sha(baseline_bundle, "router_a") == _config_sha(recovery_bundle, "router_a")
-        # both loopback routes restored, reachability healthy at recovery
-        assert _route_present(recovery_bundle, "router_a", "10.255.0.2/32") == "true"
-        assert _route_present(recovery_bundle, "router_b", "10.255.0.1/32") == "true"
-
-        ground_truth = build_ground_truth(
-            fault=fault,
-            verdicts=(*onset_results, *recovery_results),
-            accepted_evidence_ids=(*onset_bundle.evidence_ids, *recovery_bundle.evidence_ids),
-            root_cause_label=ROOT_CAUSE,
-        )
-        assert ground_truth.oracle_version == ORACLE_VERSION
-        collected_ids = {
-            *baseline_bundle.evidence_ids,
-            *onset_bundle.evidence_ids,
-            *recovery_bundle.evidence_ids,
-        }
-        assert set(ground_truth.accepted_evidence_ids) <= collected_ids
-
-        record = build_accepted_record(
-            run_ctx=run_ctx,
-            scenario=scenario_def,
-            topology=topology,
-            fault=fault,
-            ground_truth=ground_truth,
-            baseline=baseline_bundle,
-            onset=onset_bundle,
-            recovery=recovery_bundle,
-            precondition_results=pre_results,
-            onset_results=onset_results,
-            recovery_results=recovery_results,
-            restoration=restoration,
-            provenance=ProvenanceInfo(
-                generator="verifiednet.faults.bgp_remote_as_mismatch",
-                generator_version="0.1.0",
-                code_commit=commit,
-            ),
-            completed_phases=("precondition", "inject", "onset", "restore", "recovery"),
-            cleanup_status="clean",
-        )
-        # snapshot histories + build manifests while the lab is still live
-        run_manifest, env_manifest = make_live_manifests(
-            backend, run_ctx, scenario_def, status="accepted"
-        )
-        transcript_snapshot = tuple(backend.transcript.entries)  # type: ignore[attr-defined]
-        ledger_snapshot = tuple(ledger.records)
-    finally:
-        backend.stop()
 
     # -- teardown proof (independent host-side) -------------------------------
     assert project_containers(project) == []
     assert project_networks(project) == []
 
-    # -- accepted record validation ------------------------------------------
-    assert record is not None
+    assert result.convergence.converged
+    assembled = result.assembled
+    loaded = assembled.loaded
+    record = loaded.incident
+
+    # -- accepted record content ---------------------------------------------
     assert record.status == "accepted"
     assert record.ground_truth is not None
     assert record.rejection is None
     assert record.restoration is not None and record.restoration.completed
     assert record.restoration.forced_reset_used is True
-    assert record.baseline_evidence.sealed and record.onset_evidence is not None
+    assert record.incident_id.startswith("inc-")
+    assert loaded.ledger[-1].phase is LifecyclePhase.RECOVERY_VERIFIED
 
     # deterministic id + canonical round-trip
     reparsed = IncidentRecord.model_validate_json(record.model_dump_json())
     assert reparsed == record
-    assert record.incident_id.startswith("inc-")
     assert incident_to_json_bytes(record) == incident_to_json_bytes(reparsed)
 
     # mutation transcript fully paired; router_b never mutated
-    entries = [e for e in backend.transcript.entries if e.mode == "mutation"]  # type: ignore[attr-defined]
-    pending = [e for e in entries if e.stage == "pending"]
-    completed = [e for e in entries if e.stage == "completed"]
+    muts = [e for e in loaded.transcript if e.mode == "mutation"]
+    pending = [e for e in muts if e.stage == "pending"]
+    completed = [e for e in muts if e.stage == "completed"]
     assert len(pending) == len(completed) == 3  # inject, restore, clear
     assert {e.invocation.command_id for e in pending if e.invocation} == {
         e.invocation.command_id for e in completed if e.invocation
     }
-    assert all(e.target == "router_a" for e in entries)
+    assert all(e.target == "router_a" for e in muts)
 
-    # -- canonical run artifact directory (Gate 4 Step 5) --------------------
-    runs_root = tmp_path / "runs"
-    written = write_run_artifacts(
-        out_root=runs_root,
-        run_manifest=run_manifest,
-        environment_manifest=env_manifest,
-        incident=record,
-        transcript_entries=transcript_snapshot,
-        ledger_records=ledger_snapshot,
-    )
-    result = verify_run_dir(written.root)
-    assert result.verified, [c.rule for c in result.failures]
-    loaded = load_run(written.root)
-    assert loaded.incident == record  # loaded incident equals the original
-    assert loaded.run_digest == written.run_digest
-    assert loaded.ledger[-1].phase is LifecyclePhase.RECOVERY_VERIFIED
-    # every ground-truth evidence id resolves in the written evidence
+    # every ground-truth evidence id resolves in the persisted evidence
     written_ev = {r.evidence_id for b in loaded.evidence.values() for r in b.records}
-    assert record.ground_truth is not None
     assert set(record.ground_truth.accepted_evidence_ids) <= written_ev
-    # mutation transcript survived round-trip, still paired
-    live_muts = [e for e in loaded.transcript if e.mode == "mutation"]
-    assert len(live_muts) == 6  # 3 pending + 3 completed
-    assert json.loads((written.root / "incident.json").read_text())["status"] == "accepted"
+
+    # -- run index: discoverable + reload-through-index round trip ------------
+    assert verify_run_index(out_root).verified
+    assert assembled.index_entry.acceptance_status == "accepted"
+    reloaded = load_verified_run_from_index(out_root, assembled.run_id)
+    assert reloaded.run_digest == assembled.run_digest
+    assert reloaded.incident == record
