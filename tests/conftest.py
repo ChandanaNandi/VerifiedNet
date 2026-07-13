@@ -430,6 +430,57 @@ def write_indexed_run() -> Callable[..., object]:
 
 
 # --------------------------------------------------------------------------
+# Gate 6.2 Part 3: build a mixed (accepted + rejected) assigned corpus offline,
+# ready to export. Returns (assigned_examples, policy, source_index_digest).
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def export_corpus() -> Callable[..., object]:
+    """Return a helper building an assigned mixed corpus in a fresh library.
+
+    ``helper(tmp_path, accepted=[(case_id, run_id), ...], rejected=[run_id, ...],
+    policy=None)`` writes the runs, projects + assigns them, and returns a tuple
+    ``(assigned, policy, source_index_digest, out_root)``.
+    """
+    from verifiednet.datasets import (
+        SplitPolicy,
+        assign_splits,
+        discover_verified_runs,
+        project_verified_run,
+    )
+    from verifiednet.orchestrator.catalog import case_by_id
+
+    def _helper(tmp_path, *, accepted, rejected=(), policy=None):
+        out_root = tmp_path / "runs"
+
+        class _Clk:
+            def __init__(self) -> None:
+                self.t = 0.0
+
+            def monotonic(self) -> float:
+                return self.t
+
+            def sleep(self, s: float) -> None:
+                self.t += s
+
+        for case_id, run_id in accepted:
+            run_catalog_case_offline(case_by_id(case_id), out_root, tmp_path,
+                                     run_id=run_id, sim=CatalogLabSim())
+        for run_id in rejected:
+            write_and_index_run(build_rejected_prefix_inputs(run_id), out_root)
+
+        examples = [project_verified_run(d) for d in discover_verified_runs(out_root)]
+        pol = policy or SplitPolicy(salt="gate6", train_buckets=8000,
+                                    validation_buckets=1000, test_buckets=1000)
+        assigned = assign_splits(examples=examples, policy=pol)
+        digest = next(iter(discover_verified_runs(out_root))).source_index_digest
+        return assigned, pol, digest, out_root
+
+    return _helper
+
+
+# --------------------------------------------------------------------------
 # Gate 5.2: deterministic neighbor-removal lab sim + builder, shared by the
 # unit and failure tiers (tests/ is not a package; shared helpers live here).
 # --------------------------------------------------------------------------

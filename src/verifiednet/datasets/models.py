@@ -23,6 +23,7 @@ from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 
+from verifiednet.common.hashing import sha256_canonical
 from verifiednet.schemas.base import StrictModel
 
 _HEX16_RE = re.compile(r"^[0-9a-f]{16}$")
@@ -230,6 +231,24 @@ class SplitPolicy(StrictModel):
             raise ValueError("validation_buckets must be positive")
         return self
 
+    @property
+    def policy_id(self) -> str:
+        """Deterministic content id of this policy (salt + ratios + versions).
+
+        Pure hash of the versioned policy content — no timestamp, environment,
+        run list, dataset size, or iteration order. ``splitting.split_policy_id``
+        delegates here so there is exactly one formula.
+        """
+        payload = {
+            "schema_version": self.schema_version,
+            "algorithm_version": self.algorithm_version,
+            "salt": self.salt,
+            "train_buckets": self.train_buckets,
+            "validation_buckets": self.validation_buckets,
+            "test_buckets": self.test_buckets,
+        }
+        return "split-" + sha256_canonical(payload)[:16]
+
 
 class AssignedDatasetExample(StrictModel):
     """One example bound to a partition under a policy — the source example's
@@ -284,25 +303,160 @@ class LeakageAuditResult(StrictModel):
         return tuple(f for f in self.findings if f.severity is LeakageSeverity.ERROR)
 
 
-class DatasetManifest(StrictModel):
-    """Minimal Gate 6.1 manifest (no ``dataset_digest`` yet — that is Gate 6.3)."""
+# ---------------------------------------------------------------------------
+# Exported dataset manifest + digest (Gate 6.2 Part 3)
+# ---------------------------------------------------------------------------
+
+#: On-disk export layout version. Bump ONLY when the serialized bytes/layout of
+#: an exported dataset change (independent of the model ``schema_version``).
+DATASET_EXPORT_VERSION = 1
+
+#: The deterministic tool identity recorded on every manifest. A constant (never
+#: a username, hostname, or timestamp) so exports stay reproducible.
+DATASET_GENERATOR = "verifiednet.datasets.export"
+
+
+class DatasetFileHash(StrictModel):
+    """Per-file integrity record for one exported content file (splits only)."""
 
     schema_version: Literal[1] = 1
-    dataset_version: str
-    generated_by: str
-    source_index_digest: str
-    example_count: int
+    relative_path: str
+    sha256: str
+    size: int = Field(ge=0)
 
-    @field_validator("source_index_digest")
+    @field_validator("relative_path")
+    @classmethod
+    def _safe_path(cls, value: str) -> str:
+        if value.startswith("/") or "\\" in value or not _REL_PATH_RE.match(value):
+            raise ValueError(f"unsafe or absolute relative_path: {value!r}")
+        if ".." in value.split("/"):
+            raise ValueError(f"path traversal in relative_path: {value!r}")
+        return value
+
+    @field_validator("sha256")
+    @classmethod
+    def _valid_hash(cls, value: str) -> str:
+        if not _SHA256_RE.match(value):
+            raise ValueError(f"sha256 must be 64 lowercase hex: {value!r}")
+        return value
+
+
+class DatasetPartitionCounts(StrictModel):
+    """Example counts per partition (deterministic, derived from the corpus)."""
+
+    schema_version: Literal[1] = 1
+    train: int = Field(ge=0)
+    validation: int = Field(ge=0)
+    test: int = Field(ge=0)
+    abstention: int = Field(ge=0)
+
+    @property
+    def accepted_total(self) -> int:
+        return self.train + self.validation + self.test
+
+    @property
+    def total(self) -> int:
+        return self.accepted_total + self.abstention
+
+
+def compute_dataset_digest(
+    *,
+    schema_version: int,
+    export_version: int,
+    dataset_version: str,
+    generated_by: str,
+    source_index_digest: str,
+    split_policy_id: str,
+    partition_counts: DatasetPartitionCounts,
+    files: tuple[DatasetFileHash, ...],
+) -> str:
+    """Non-recursive digest over the exported dataset's content + config.
+
+    Derived ONLY from the exported content (per-file hashes) and the deterministic
+    build config (versions, dataset label, source index pin, split-policy id,
+    counts). It never includes itself, a timestamp, a machine identity, an
+    absolute path, or filesystem ordering (the file list is path-sorted). Two
+    exports of identical source data therefore share one ``dataset_digest``.
+    """
+    payload = {
+        "schema_version": schema_version,
+        "export_version": export_version,
+        "dataset_version": dataset_version,
+        "generated_by": generated_by,
+        "source_index_digest": source_index_digest,
+        "split_policy_id": split_policy_id,
+        "partition_counts": {
+            "train": partition_counts.train,
+            "validation": partition_counts.validation,
+            "test": partition_counts.test,
+            "abstention": partition_counts.abstention,
+        },
+        "files": [
+            {"relative_path": f.relative_path, "sha256": f.sha256, "size": f.size}
+            for f in sorted(files, key=lambda f: f.relative_path)
+        ],
+    }
+    return sha256_canonical(payload)
+
+
+class DatasetManifest(StrictModel):
+    """The immutable corpus manifest of an exported dataset (Gate 6.2 Part 3).
+
+    It fully describes one export: the dataset/label + schema/export versions, the
+    pinned ``source_index_digest``, the exact ``SplitPolicy`` and its derived id,
+    the accepted/rejected/partition counts, the per-file content hashes, and the
+    self-validating ``dataset_digest``. The manifest carries NO timestamp,
+    username, hostname, or machine identity — only deterministic build metadata.
+    """
+
+    schema_version: Literal[1] = 1
+    export_version: Literal[1] = 1
+    dataset_version: str = Field(min_length=1)
+    generated_by: str = Field(min_length=1)
+    source_index_digest: str
+    split_policy: SplitPolicy
+    split_policy_id: str = Field(min_length=1)
+    accepted_count: int = Field(ge=0)
+    rejected_count: int = Field(ge=0)
+    example_count: int = Field(ge=0)
+    partition_counts: DatasetPartitionCounts
+    files: tuple[DatasetFileHash, ...] = Field(default_factory=tuple)
+    dataset_digest: str
+
+    @field_validator("source_index_digest", "dataset_digest")
     @classmethod
     def _valid_digest(cls, value: str) -> str:
         if not _SHA256_RE.match(value):
-            raise ValueError(f"source_index_digest must be 64 lowercase hex: {value!r}")
+            raise ValueError(f"expected 64 lowercase hex digest: {value!r}")
         return value
 
-    @field_validator("example_count")
-    @classmethod
-    def _nonneg(cls, value: int) -> int:
-        if value < 0:
-            raise ValueError(f"example_count must be >= 0: {value}")
-        return value
+    @model_validator(mode="after")
+    def _consistent(self) -> DatasetManifest:
+        if self.split_policy_id != self.split_policy.policy_id:
+            raise ValueError("split_policy_id does not match split_policy")
+        if self.example_count != self.accepted_count + self.rejected_count:
+            raise ValueError("example_count must equal accepted_count + rejected_count")
+        if self.partition_counts.accepted_total != self.accepted_count:
+            raise ValueError("train+validation+test must equal accepted_count")
+        if self.partition_counts.abstention != self.rejected_count:
+            raise ValueError("abstention count must equal rejected_count")
+        # files must be path-sorted and unique (stable, deduplicated layout).
+        paths = [f.relative_path for f in self.files]
+        if paths != sorted(paths):
+            raise ValueError("manifest files must be path-sorted")
+        if len(paths) != len(set(paths)):
+            raise ValueError("manifest files must be unique by path")
+        # The digest is self-validating: it must equal a fresh recomputation.
+        expected = compute_dataset_digest(
+            schema_version=self.schema_version,
+            export_version=self.export_version,
+            dataset_version=self.dataset_version,
+            generated_by=self.generated_by,
+            source_index_digest=self.source_index_digest,
+            split_policy_id=self.split_policy_id,
+            partition_counts=self.partition_counts,
+            files=self.files,
+        )
+        if self.dataset_digest != expected:
+            raise ValueError("dataset_digest does not match manifest content")
+        return self

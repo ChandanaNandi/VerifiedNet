@@ -96,11 +96,17 @@ None of these requires an example-schema change to add later.
   fail-closed `audit_leakage`. The abstention partition (originally sketched for
   6.4) landed here because rejected-as-abstention is inseparable from splitting.
   See `rejected-examples-and-leakage-safe-splits.md`.
-- **Gate 6.3 (Part 3) — corpus writer/reader + dataset digest + verifier +
-  coverage/provenance.** The dataset writer/reader; non-recursive
-  `dataset_digest`; `DatasetManifest`; the dataset verifier; duplicate
-  detection; coverage report; build-twice determinism test; bulk export.
-- **Gate 6.4 — features/labels separation.** The features-only view; label file.
+- **Gate 6.2 (Part 3) — exported dataset + digest + writer/reader/verifier +
+  reproducibility. DONE.** The immutable export layout (`manifest.json` +
+  `splits/{train,validation,test,abstention}.jsonl`); the self-validating
+  non-recursive `dataset_digest`; the full `DatasetManifest` corpus manifest;
+  the deterministic `write_dataset`; the fail-closed `read_dataset`; the
+  structured `verify_dataset` (missing/unexpected/duplicate/corruption/digest
+  detection); and the build-twice reproducibility proof (byte-identical files +
+  digests + manifests). See `exported-dataset-and-reproducibility.md`.
+- **Gate 6.2 (Part 4) — features/labels separation.** The features-only view; a
+  withheld-label file for the future hidden benchmark, layered on the Part 3
+  exported dataset.
 - **Gate 6.5 — closure.** Completion report + acceptance matrix; propose (NOT
   create) `v0.6-gate6-complete`.
 

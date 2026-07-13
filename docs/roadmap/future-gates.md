@@ -23,7 +23,7 @@ Gates run in dependency order. Completed Gates 0–4 are not renumbered.
 | 0–3 | Verified foundation, offline: contracts, runtime, verifiers, fault lifecycle | 1 | **complete** |
 | 4 | First live verified incident (two-router FRR; accepted + precondition-rejected); artifacts, run index, composition root | 1 | **complete** |
 | 5 | Verified fault-family library: BGP remote-AS mismatch, neighbor removal, interface shutdown, prefix withdrawal; bounded scenario matrix; cross-family isolation | 1 | **complete** — see `../architecture/gate5/gate5-completion-report.md` |
-| 6 | Verified dataset engine and leakage-safe splits (incident corpus, provenance) | 2 | in progress — 6.1 + 6.2 (read-only projection, rejected-as-abstention, deterministic integer-bucket splitting, fail-closed leakage audit) implemented; corpus writer/digest/manifest/export remain (Part 3). See `../architecture/gate6/rejected-examples-and-leakage-safe-splits.md` |
+| 6 | Verified dataset engine and leakage-safe splits (incident corpus, provenance) | 2 | in progress — 6.1 + 6.2 Parts 2-3 (read-only projection, rejected-as-abstention, deterministic integer-bucket splitting, fail-closed leakage audit, immutable exported dataset with self-validating `dataset_digest`, writer/reader/verifier, build-twice reproducibility) implemented; features/labels separation remains (Part 4). See `../architecture/gate6/exported-dataset-and-reproducibility.md` |
 | 7 | Deterministic rule baselines and evaluation framework/infrastructure | 3 | planned |
 | 8 | Base SLM benchmark | 3, 4 | planned |
 | 9 | Networking SLM fine-tuning (behind ModelAdapter) | 4 | planned |

@@ -57,16 +57,18 @@ evidence-based fault-family plan (Gate 5.0) is in
 library (BGP remote-AS mismatch, neighbor removal, interface shutdown, prefix
 withdrawal), a bounded scenario catalog with reverse-orientation proof, and
 cross-family isolation — see `architecture/gate5/gate5-completion-report.md`.
-Gate 6 (verified dataset engine) is partially implemented: the engine design
+Gate 6 (verified dataset engine) is largely implemented: the engine design
 (Gate 6.0) is in `architecture/gate6/` (dataset-engine-plan, leakage-analysis,
 dataset-schema, splitting-strategy, gate6-roadmap) with ADR-0018. Gate 6.1
-(read-only models, discovery, integrity-gated projection) and Gate 6.2 Part 2
+(read-only models, discovery, integrity-gated projection), Gate 6.2 Part 2
 (rejected-as-abstention projection, deterministic integer-bucket splitting, and
-the fail-closed leakage audit) now exist in `verifiednet.datasets` — a read-only,
-model-free projection that never mutates a verified run; see
-`architecture/gate6/rejected-examples-and-leakage-safe-splits.md`. The corpus
-writer, dataset digest, manifest, and export remain planned (Gate 6 Part 3).
-Layers 2–8 in
+the fail-closed leakage audit), and Gate 6.2 Part 3 (the immutable exported
+dataset — corpus manifest, self-validating `dataset_digest`, writer, reader,
+verifier, and build-twice reproducibility) now exist in `verifiednet.datasets` —
+a read-only, model-free projection that never mutates a verified run; see
+`architecture/gate6/rejected-examples-and-leakage-safe-splits.md` and
+`architecture/gate6/exported-dataset-and-reproducibility.md`. The features/labels
+separation remains planned (Gate 6.2 Part 4). Layers 2–8 in
 `final-platform-vision.md` are **planned, not implemented** — no AI, RAG, GraphRAG, SLM,
 agent, memory, or persistent workflow exists yet. The deterministic trust core (labs →
 faults → evidence → verification → oracle → incidents → recovery → artifacts → index) is

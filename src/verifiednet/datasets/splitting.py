@@ -40,16 +40,12 @@ class DatasetSplitError(VerifiedNetError):
 
 
 def split_policy_id(policy: SplitPolicy) -> str:
-    """Deterministic content id of a split policy (salt + ratios + versions)."""
-    payload = {
-        "schema_version": policy.schema_version,
-        "algorithm_version": policy.algorithm_version,
-        "salt": policy.salt,
-        "train_buckets": policy.train_buckets,
-        "validation_buckets": policy.validation_buckets,
-        "test_buckets": policy.test_buckets,
-    }
-    return "split-" + sha256_canonical(payload)[:16]
+    """Deterministic content id of a split policy (salt + ratios + versions).
+
+    Delegates to ``SplitPolicy.policy_id`` so there is exactly one formula shared
+    with the exported ``DatasetManifest``; the value is unchanged from Part 2.
+    """
+    return policy.policy_id
 
 
 def _bucket_for_group(group_id: str, policy: SplitPolicy) -> int:
