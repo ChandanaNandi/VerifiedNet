@@ -104,9 +104,14 @@ None of these requires an example-schema change to add later.
   structured `verify_dataset` (missing/unexpected/duplicate/corruption/digest
   detection); and the build-twice reproducibility proof (byte-identical files +
   digests + manifests). See `exported-dataset-and-reproducibility.md`.
-- **Gate 6.2 (Part 4) — features/labels separation.** The features-only view; a
-  withheld-label file for the future hidden benchmark, layered on the Part 3
-  exported dataset.
+- **Gate 6.2 (Part 4) — feature/label/trace separation. DONE.** Explicit
+  model-visible `DatasetFeatures` (allowlist), an evaluation-only
+  `AcceptedLabels`/`AbstentionLabels` discriminated union, non-model
+  `DatasetTraceMetadata`, versioned feature/label policies, a fail-closed
+  feature-leakage audit over the serialized model-visible payload, and the
+  persisted "prepared" corpus (features/labels/metadata layers) with a
+  model-facing features-only loader, an evaluator-facing loader, a verifier, and
+  a build-twice reproducibility proof. See `feature-label-separation.md`.
 - **Gate 6.5 — closure.** Completion report + acceptance matrix; propose (NOT
   create) `v0.6-gate6-complete`.
 

@@ -480,6 +480,70 @@ def export_corpus() -> Callable[..., object]:
     return _helper
 
 
+@pytest.fixture
+def separated_pipeline() -> Callable[..., object]:
+    """Build runs -> Part 3 export -> load -> separate. Returns a rich context.
+
+    ``helper(tmp_path, accepted=[...], rejected=[...])`` returns an object with
+    ``.loaded`` (LoadedDataset), ``.separated`` (tuple), ``.dataset`` (built
+    ExportedDataset), ``.dataset_dir`` (written Part 3 dir), ``.run_root``,
+    ``.source_index_digest``, ``.feature_policy``, ``.label_policy``.
+    """
+    from dataclasses import dataclass as _dc
+
+    from verifiednet.datasets import (
+        SplitPolicy,
+        assign_splits,
+        build_dataset,
+        discover_verified_runs,
+        project_verified_run,
+        read_dataset,
+        write_dataset,
+    )
+    from verifiednet.datasets.features import FeaturePolicy, LabelPolicy
+    from verifiednet.datasets.separation import separate_dataset
+    from verifiednet.orchestrator.catalog import case_by_id
+
+    @_dc(frozen=True)
+    class _Ctx:
+        loaded: object
+        separated: object
+        dataset: object
+        dataset_dir: object
+        run_root: object
+        source_index_digest: str
+        feature_policy: object
+        label_policy: object
+
+    def _helper(tmp_path, *, accepted, rejected=(), policy=None):
+        out_root = tmp_path / "runs"
+        for case_id, run_id in accepted:
+            run_catalog_case_offline(case_by_id(case_id), out_root, tmp_path,
+                                     run_id=run_id, sim=CatalogLabSim())
+        for run_id in rejected:
+            write_and_index_run(build_rejected_prefix_inputs(run_id), out_root)
+
+        examples = [project_verified_run(d) for d in discover_verified_runs(out_root)]
+        pol = policy or SplitPolicy(salt="gate6", train_buckets=8000,
+                                    validation_buckets=1000, test_buckets=1000)
+        assigned = assign_splits(examples=examples, policy=pol)
+        idx = next(iter(discover_verified_runs(out_root))).source_index_digest
+        ds = build_dataset(assigned, policy=pol, dataset_version="v1",
+                           source_index_digest=idx)
+        dataset_dir = tmp_path / "dataset"
+        write_dataset(ds, dataset_dir)
+        loaded = read_dataset(dataset_dir)
+        fp, lp = FeaturePolicy(), LabelPolicy()
+        sep = separate_dataset(loaded.examples, feature_policy=fp, label_policy=lp,
+                               dataset_version=loaded.manifest.dataset_version,
+                               source_index_digest=idx)
+        return _Ctx(loaded=loaded, separated=sep, dataset=ds, dataset_dir=dataset_dir,
+                    run_root=out_root, source_index_digest=idx,
+                    feature_policy=fp, label_policy=lp)
+
+    return _helper
+
+
 # --------------------------------------------------------------------------
 # Gate 5.2: deterministic neighbor-removal lab sim + builder, shared by the
 # unit and failure tiers (tests/ is not a package; shared helpers live here).

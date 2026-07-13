@@ -1,14 +1,15 @@
 # Gate 6.0 — Verified Dataset Engine: Engineering Plan
 
-**Status:** IMPLEMENTED (Gate 6.1 + Gate 6.2 Parts 1-3). Models, discovery, and
-read-only projection (Part 1); rejected-as-abstention projection, deterministic
-integer-bucket splitting, and the fail-closed leakage audit (Part 2); and the
-immutable exported dataset — corpus manifest, `dataset_digest`, writer, reader,
-verifier, and build-twice reproducibility (Part 3) — now exist in
-`verifiednet.datasets`. See `rejected-examples-and-leakage-safe-splits.md` and
-`exported-dataset-and-reproducibility.md`. Remaining for Gate 6.2 Part 4: the
-features/labels separation. This document remains the governing engineering
-specification.
+**Status:** IMPLEMENTED (Gate 6.1 + Gate 6.2 Parts 1-4 — Gate 6.2 complete).
+Models, discovery, and read-only projection (Part 1); rejected-as-abstention
+projection, deterministic integer-bucket splitting, and the fail-closed leakage
+audit (Part 2); the immutable exported dataset with `dataset_digest`,
+writer/reader/verifier, and reproducibility (Part 3); and explicit
+feature/label/trace separation with versioned policies, a feature-leakage audit,
+and the persisted "prepared" corpus (Part 4) — all exist in
+`verifiednet.datasets`. See `rejected-examples-and-leakage-safe-splits.md`,
+`exported-dataset-and-reproducibility.md`, and `feature-label-separation.md`.
+This document remains the governing engineering specification.
 
 The single governing principle: **the dataset engine is a deterministic,
 read-only PROJECTION of already-verified runs. It never creates, relabels,

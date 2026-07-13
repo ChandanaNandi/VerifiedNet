@@ -5,10 +5,15 @@
 `example_kind`, `stable_identity`, and rejected-run source facts, plus the
 `SplitPolicy`, `AssignedDatasetExample`, and leakage-audit models. The full
 corpus `DatasetManifest`, `DatasetFileHash`, `DatasetPartitionCounts`, and the
-self-validating non-recursive `dataset_digest` are now IMPLEMENTED too (Part 3);
-see `exported-dataset-and-reproducibility.md`. Field names below are the design
-proposal; the committed contract is the code and its contract tests
-(`tests/contract/test_datasets_shapes.py`, `test_datasets_export_shapes.py`).
+self-validating non-recursive `dataset_digest` are IMPLEMENTED too (Part 3); see
+`exported-dataset-and-reproducibility.md`. Part 4 adds the separated
+representation — `DatasetFeatures`, `AcceptedLabels`/`AbstentionLabels`,
+`DatasetTraceMetadata`, `SeparatedDatasetExample`, the versioned
+`FeaturePolicy`/`LabelPolicy`, and the `PreparedManifest` — see
+`feature-label-separation.md`. Field names below are the design proposal; the
+committed contract is the code and its contract tests
+(`tests/contract/test_datasets_shapes.py`, `test_datasets_export_shapes.py`,
+`test_datasets_features_shapes.py`).
 
 ## 1. The dataset example (one verified run, projected)
 
