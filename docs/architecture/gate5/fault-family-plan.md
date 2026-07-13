@@ -1,6 +1,11 @@
 # Gate 5.0 — Fault-Family Plan, Feasibility Audit, and Proof Matrix
 
-**Status:** PLANNING ONLY. No fault was implemented, no production code changed,
+**Status:** PLAN COMPLETE AND EXECUTED. Gates 5.1–5.7 implemented every approved
+family and the bounded scenario matrix; see `gate5-completion-report.md` for the
+final acceptance matrix and live results. The plan below is retained as the
+historical Gate 5.0 record.
+
+**Original status (Gate 5.0):** PLANNING ONLY. No fault was implemented, no production code changed,
 no mutation injected, no live incident launched. Every conclusion below is
 derived from repository evidence at baseline `c1df6d3`
 (`v0.4-gate4-complete`): source, tests, ADRs, Gate 4 documents, and the

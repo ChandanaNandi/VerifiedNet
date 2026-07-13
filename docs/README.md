@@ -53,11 +53,11 @@ verified incidents (two-router FRR; accepted + precondition-rejected), canonical
 artifacts, a run index, and a thin composition root — see
 `architecture/gate4/gate4-completion-report.md`. Gate 5 is in progress: the
 evidence-based fault-family plan (Gate 5.0) is in
-`architecture/gate5/fault-family-plan.md`; Gates 5.1–5.4 are implemented and
-live-verified: shared lifecycle enablers + the BGP neighbor-removal family
-(`architecture/gate5/neighbor-removal-family.md`), and interface administrative
-shutdown + BGP prefix-advertisement withdrawal
-(`architecture/gate5/interface-shutdown-and-prefix-withdrawal.md`). Layers 2–8 in
+`architecture/gate5/fault-family-plan.md`; Gate 5 is complete: a verified fault-family
+library (BGP remote-AS mismatch, neighbor removal, interface shutdown, prefix
+withdrawal), a bounded scenario catalog with reverse-orientation proof, and
+cross-family isolation — see `architecture/gate5/gate5-completion-report.md`.
+Gate 6 (verified dataset engine) has not begun. Layers 2–8 in
 `final-platform-vision.md` are **planned, not implemented** — no AI, RAG, GraphRAG, SLM,
 agent, memory, or persistent workflow exists yet. The deterministic trust core (labs →
 faults → evidence → verification → oracle → incidents → recovery → artifacts → index) is

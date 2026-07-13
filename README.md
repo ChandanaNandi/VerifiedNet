@@ -3,12 +3,15 @@
 An open platform for building, verifying, benchmarking, and evaluating AI systems for
 computer networks.
 
-**Status: Gate 4 complete — first live verified incidents.** A two-router FRR eBGP lab is
-executed live: one accepted remote-AS-mismatch incident and one deliberately-rejected
-precondition incident, each with real deterministic evidence, restoration and cleanup,
-canonical per-run artifacts, a run index, and a thin composition root. No AI capability
-exists yet, and no model participates in producing ground truth. Live claims are recorded
-only from reproducible runs on the canonical host.
+**Status: Gate 5 complete — a verified fault-family library.** A two-router FRR eBGP lab is
+executed live across four accepted fault families (BGP remote-AS mismatch, neighbor
+removal, interface administrative shutdown, BGP prefix-advertisement withdrawal) plus a
+deterministic precondition-rejected incident. A small, explicit scenario catalog adds a
+bounded parameter matrix with reverse-orientation (router_b) proof; runs are isolated,
+repeatable, and catalogued in an integrity-verified run index. Every run has real
+deterministic evidence, byte-identical restoration, and zero-residue cleanup. No AI
+capability exists yet, and no model participates in producing ground truth. Live claims are
+recorded only from reproducible runs on the canonical host.
 
 Core thesis: verified, reproducible networking incidents and standardized evaluation for
 networking AI. Ground truth comes exclusively from injected-fault metadata and
@@ -25,7 +28,7 @@ deterministic verifiers — never from a model.
 - `src/verifiednet/faults` — fault lifecycle, phase-guarded ledger, BGP ASN-mismatch spec
 - `src/verifiednet/incidents` — ground-truth oracle, IncidentRecord builder, manifests
 - `src/verifiednet/artifacts` — canonical per-run artifact directory, integrity verifier, run index
-- `src/verifiednet/orchestrator` — thin Gate 4 composition root (assemble, index, run both live paths)
+- `src/verifiednet/orchestrator` — thin composition root: assemble, index, four fault-family bindings, bounded scenario catalog
 
 ## Development
 

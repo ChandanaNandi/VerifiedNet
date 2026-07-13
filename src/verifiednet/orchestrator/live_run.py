@@ -39,9 +39,15 @@ from verifiednet.labs.frr.rejected_scenario import (
 )
 from verifiednet.labs.frr.scenario_evidence import LiveScenarioEvidenceProvider
 from verifiednet.orchestrator.assembly import AssembledRun, assemble_verified_run
+from verifiednet.orchestrator.catalog import (
+    ScenarioCase,
+    case_by_id,
+    validate_scenario_case,
+)
 from verifiednet.orchestrator.families import (
     REMOTE_AS_MISMATCH_BINDING,
     FaultFamilyBinding,
+    binding_for_template,
 )
 from verifiednet.runtime.process import ProcessRunner, default_runner
 from verifiednet.runtime.transcript import InMemoryTranscript
@@ -198,6 +204,52 @@ def run_accepted_incident(
         finished_at=payload["finished_at"],  # type: ignore[arg-type]
     )
     return LiveRunResult(assembled=assembled, convergence=convergence)
+
+
+def run_accepted_case(
+    *,
+    case: ScenarioCase,
+    out_root: str | Path,
+    work_dir: str | Path,
+    run_ctx: RunContext,
+    topology: TopologySpec,
+    git_rev: str,
+    lock_hash: str,
+    runner: ProcessRunner = default_runner,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+    convergence_timeout_s: float = 60.0,
+) -> LiveRunResult:
+    """Run one CATALOG-APPROVED scenario case through its family's live path.
+
+    Only cases present in ``SCENARIO_CATALOG`` are executable: the case is
+    validated deterministically against the topology first (raising before any
+    lab action), then dispatched to the existing family binding and the existing
+    ``run_accepted_incident`` path. This adds no new execution logic and no
+    free-form command generation — the case carries plain scalars only.
+    """
+    try:
+        approved = case_by_id(case.case_id)
+    except KeyError as exc:
+        raise LiveRunError(str(exc)) from exc
+    if approved is not case:
+        raise LiveRunError(f"case {case.case_id!r} is not the approved catalog instance")
+    validate_scenario_case(case, topology)
+    binding = binding_for_template(case.template_id)
+    return run_accepted_incident(
+        out_root=out_root,
+        work_dir=work_dir,
+        run_ctx=run_ctx,
+        topology=topology,
+        scenario=case.scenario,
+        git_rev=git_rev,
+        lock_hash=lock_hash,
+        runner=runner,
+        monotonic=monotonic,
+        sleep=sleep,
+        convergence_timeout_s=convergence_timeout_s,
+        binding=binding,
+    )
 
 
 def run_precondition_rejected_incident(

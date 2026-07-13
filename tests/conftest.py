@@ -849,3 +849,206 @@ def prefix_sim_cls():
 @pytest.fixture
 def build_prefix_scenario():
     return build_prefix_withdrawal_scenario
+
+
+# --------------------------------------------------------------------------
+# Gate 5.5/5.6: symmetric catalog lab sim (both routers, all four families),
+# shared by the catalog + cross-family test modules (tests/ is not a package).
+# --------------------------------------------------------------------------
+
+import json as _json2  # noqa: E402
+
+CATALOG_GIT_REV = "deadbeefcafe"
+CATALOG_LOCK_HASH = "b" * 64
+
+_CATALOG_NODES = {
+    "router_a": {"asn": 65001, "loopback": "10.255.0.1/32", "peer_ip": "172.30.0.2",
+                 "correct_remote_as": 65002, "peer": "router_b", "peer_loopback": "10.255.0.2/32"},
+    "router_b": {"asn": 65002, "loopback": "10.255.0.2/32", "peer_ip": "172.30.0.1",
+                 "correct_remote_as": 65001, "peer": "router_a", "peer_loopback": "10.255.0.1/32"},
+}
+
+
+class _CatNodeState:
+    def __init__(self, name: str) -> None:
+        facts = _CATALOG_NODES[name]
+        self.name = name
+        self.remote_as = int(facts["correct_remote_as"])
+        self.has_neighbor = True
+        self.eth1_up = True
+        self.advertised = True
+
+
+class CatalogLabSim:
+    """Symmetric Docker+FRR simulator: both routers carry independent state."""
+
+    def __init__(self) -> None:
+        self.a = _CatNodeState("router_a")
+        self.b = _CatNodeState("router_b")
+        self._up = False
+        self.mutation_targets: list[str] = []
+
+    def _state(self, node: str):
+        return self.a if node == "router_a" else self.b
+
+    @property
+    def _session_up(self) -> bool:
+        return (
+            self.a.eth1_up and self.b.eth1_up
+            and self.a.has_neighbor and self.b.has_neighbor
+            and self.a.remote_as == _CATALOG_NODES["router_a"]["correct_remote_as"]
+            and self.b.remote_as == _CATALOG_NODES["router_b"]["correct_remote_as"]
+        )
+
+    def _ps(self) -> str:
+        if not self._up:
+            return ""
+        return "cid_a\trouter_a\trunning\ncid_b\trouter_b\trunning"
+
+    def _bgp_summary(self, node: str) -> str:
+        st = self._state(node)
+        facts = _CATALOG_NODES[node]
+        if not st.has_neighbor:
+            return _json2.dumps({})
+        state = "Established" if self._session_up else "Active"
+        peers = {facts["peer_ip"]: {"state": state, "remoteAs": st.remote_as}}
+        return _json2.dumps({"ipv4Unicast": {"as": facts["asn"], "peers": peers}})
+
+    def _interfaces(self, node: str) -> str:
+        st = self._state(node)
+        eth1 = ({"administrativeStatus": "down", "operationalStatus": "down"}
+                if not st.eth1_up
+                else {"administrativeStatus": "up", "operationalStatus": "up"})
+        return _json2.dumps({"eth1": eth1,
+                            "lo": {"administrativeStatus": "up", "operationalStatus": "up"}})
+
+    def _routes(self, node: str) -> str:
+        facts = _CATALOG_NODES[node]
+        peer = self._state(facts["peer"])
+        table = {facts["loopback"]: [{"protocol": "connected"}]}
+        if self._session_up and peer.advertised:
+            table[facts["peer_loopback"]] = [{"protocol": "bgp"}]
+        return _json2.dumps(table)
+
+    def _running_config(self, node: str) -> str:
+        st = self._state(node)
+        facts = _CATALOG_NODES[node]
+        lines = [f"hostname {node}", "interface eth1", f" ip address {facts['peer_ip']}/30-face"]
+        if not st.eth1_up:
+            lines.append(" shutdown")
+        lines.append(f"router bgp {facts['asn']}")
+        if st.has_neighbor:
+            lines.append(f" neighbor {facts['peer_ip']} remote-as {st.remote_as}")
+        lines.append(" address-family ipv4 unicast")
+        if st.advertised:
+            lines.append(f"  network {facts['loopback']}")
+        if st.has_neighbor:
+            lines.append(f"  neighbor {facts['peer_ip']} activate")
+        lines.append(" exit-address-family")
+        return "\n".join(lines) + "\n"
+
+    @staticmethod
+    def _cmds(logical):
+        return [logical[i + 1] for i in range(len(logical)) if logical[i] == "-c"]
+
+    def _exec(self, node: str, logical):
+        from verifiednet.runtime.process import RawResult
+
+        if logical and logical[0] == "ping":
+            st = self._state(node)
+            peer = self._state(_CATALOG_NODES[node]["peer"])
+            ok = st.eth1_up and peer.eth1_up
+            return RawResult(0 if ok else 1, "1 received" if ok else "0 received", "",
+                             False, False, False)
+        cmds = self._cmds(logical)
+        first = cmds[0] if cmds else ""
+        if first.startswith("show"):
+            if first == "show ip bgp summary json":
+                return RawResult(0, self._bgp_summary(node), "", False, False, False)
+            if first == "show interface json":
+                return RawResult(0, self._interfaces(node), "", False, False, False)
+            if first == "show ip route json":
+                return RawResult(0, self._routes(node), "", False, False, False)
+            if first == "show running-config":
+                return RawResult(0, self._running_config(node), "", False, False, False)
+            if first == "show version":
+                return RawResult(0, "FRRouting 8.4.1_git (r) on Linux", "", False, False, False)
+            raise AssertionError(f"unhandled show: {first!r}")
+        self.mutation_targets.append(node)
+        st = self._state(node)
+        for c in cmds:
+            if c.startswith("no neighbor"):
+                st.has_neighbor = False
+            elif c.startswith("neighbor") and "remote-as" in c:
+                st.has_neighbor = True
+                st.remote_as = int(c.split()[-1])
+            elif c == "shutdown":
+                st.eth1_up = False
+            elif c == "no shutdown":
+                st.eth1_up = True
+            elif c.startswith("no network"):
+                st.advertised = False
+            elif c.startswith("network"):
+                st.advertised = True
+        return RawResult(0, "", "", False, False, False)
+
+    def __call__(self, argv, timeout_s, max_output_bytes):
+        from verifiednet.runtime.process import RawResult
+
+        a = list(argv)
+        if a[:2] == ["docker", "ps"]:
+            return RawResult(0, self._ps(), "", False, False, False)
+        if a[:3] == ["docker", "network", "ls"]:
+            return RawResult(0, "", "", False, False, False)
+        if a[:2] == ["docker", "version"]:
+            return RawResult(0, "29.1.3", "", False, False, False)
+        if a[:3] == ["docker", "compose", "version"]:
+            return RawResult(0, "v2.29.0", "", False, False, False)
+        if a[:3] == ["docker", "image", "inspect"]:
+            return RawResult(0, "frrouting/frr@sha256:" + "c" * 64, "", False, False, False)
+        if a[:2] == ["docker", "compose"] and "up" in a:
+            self._up = True
+            return RawResult(0, "", "", False, False, False)
+        if a[:2] == ["docker", "compose"] and "down" in a:
+            self._up = False
+            return RawResult(0, "", "", False, False, False)
+        if "exec" in a:
+            idx = a.index("exec")
+            return self._exec(a[idx + 2], a[idx + 3:])
+        raise AssertionError(f"unhandled command: {a!r}")
+
+
+def _catalog_epoch():
+    return datetime(2025, 1, 1, tzinfo=UTC)
+
+
+def run_catalog_case_offline(case, out_root, tmp_path, run_id=None, sim=None):
+    """Run one ScenarioCase through run_accepted_case with a fresh CatalogLabSim."""
+    from verifiednet.orchestrator import run_accepted_case
+
+    rid = run_id or f"run-{case.case_id}"
+
+    class _Clk:
+        def __init__(self): self.t = 0.0
+        def monotonic(self): return self.t
+        def sleep(self, s): self.t += s
+
+    clk = _Clk()
+    return run_accepted_case(
+        case=case, out_root=out_root, work_dir=tmp_path / rid,
+        run_ctx=RunContext(rid, clock=_catalog_epoch),
+        topology=two_router_frr_topology(),
+        git_rev=CATALOG_GIT_REV, lock_hash=CATALOG_LOCK_HASH,
+        runner=sim or CatalogLabSim(), monotonic=clk.monotonic, sleep=clk.sleep,
+        convergence_timeout_s=5.0,
+    )
+
+
+@pytest.fixture
+def catalog_sim_cls():
+    return CatalogLabSim
+
+
+@pytest.fixture
+def run_catalog_case():
+    return run_catalog_case_offline

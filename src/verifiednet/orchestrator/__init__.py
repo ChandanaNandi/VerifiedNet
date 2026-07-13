@@ -9,6 +9,14 @@ imports it (AST-enforced).
 """
 
 from verifiednet.orchestrator.assembly import AssembledRun, assemble_verified_run
+from verifiednet.orchestrator.catalog import (
+    SCENARIO_CATALOG,
+    ScenarioCase,
+    ScenarioValidationError,
+    case_by_id,
+    cases_for_template,
+    validate_scenario_case,
+)
 from verifiednet.orchestrator.families import (
     APPROVED_FAMILY_BINDINGS,
     BGP_NEIGHBOR_REMOVAL_BINDING,
@@ -21,6 +29,7 @@ from verifiednet.orchestrator.families import (
 from verifiednet.orchestrator.live_run import (
     LiveRunError,
     LiveRunResult,
+    run_accepted_case,
     run_accepted_incident,
     run_precondition_rejected_incident,
 )
@@ -36,15 +45,22 @@ __all__ = [
     "BGP_PREFIX_WITHDRAWAL_BINDING",
     "IFACE_ADMIN_SHUTDOWN_BINDING",
     "REMOTE_AS_MISMATCH_BINDING",
+    "SCENARIO_CATALOG",
     "AssembledRun",
     "FaultFamilyBinding",
     "LiveRunError",
     "LiveRunResult",
+    "ScenarioCase",
+    "ScenarioValidationError",
     "assemble_verified_run",
     "binding_for_template",
     "build_environment_manifest",
     "build_run_manifest",
+    "case_by_id",
+    "cases_for_template",
+    "run_accepted_case",
     "run_accepted_incident",
     "run_precondition_rejected_incident",
     "transcript_sha256",
+    "validate_scenario_case",
 ]

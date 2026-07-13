@@ -3,7 +3,10 @@
 The platform is built in strict gates. Gates 0–3 are complete (offline architecture and
 contracts). Gate 4 is complete: the first live verified incidents (two-router FRR;
 accepted + precondition-rejected), canonical artifacts, run index, and a thin composition
-root. Everything from Gate 5 onward is **planned and not yet implemented** — listed here so
+root. Gate 5 is complete: a verified fault-family library (four accepted families, a
+deterministic rejection, a bounded scenario matrix with reverse-orientation proof, and
+cross-family isolation) — see `../architecture/gate5/gate5-completion-report.md`.
+Everything from Gate 6 onward is **planned and not yet implemented** — listed here so
 the trajectory is explicit. No capability is assumed to exist until its gate ships and is
 tested.
 
@@ -19,7 +22,7 @@ Gates run in dependency order. Completed Gates 0–4 are not renumbered.
 |---|---|---|---|
 | 0–3 | Verified foundation, offline: contracts, runtime, verifiers, fault lifecycle | 1 | **complete** |
 | 4 | First live verified incident (two-router FRR; accepted + precondition-rejected); artifacts, run index, composition root | 1 | **complete** |
-| 5 | More fault families and lab backends (SONiC-VS, EVPN/VXLAN, SR Linux; ACL/Batfish) | 1 | planned, next — fault-family plan approved (Gate 5.0): see `../architecture/gate5/fault-family-plan.md` |
+| 5 | Verified fault-family library: BGP remote-AS mismatch, neighbor removal, interface shutdown, prefix withdrawal; bounded scenario matrix; cross-family isolation | 1 | **complete** — see `../architecture/gate5/gate5-completion-report.md` |
 | 6 | Verified dataset engine and leakage-safe splits (incident corpus, provenance) | 2 | planned |
 | 7 | Deterministic rule baselines and evaluation framework/infrastructure | 3 | planned |
 | 8 | Base SLM benchmark | 3, 4 | planned |
