@@ -328,3 +328,207 @@ def write_inputs() -> Callable[..., object]:
         )
 
     return _write
+
+
+# --------------------------------------------------------------------------
+# Gate 5.2: deterministic neighbor-removal lab sim + builder, shared by the
+# unit and failure tiers (tests/ is not a package; shared helpers live here).
+# --------------------------------------------------------------------------
+
+NEIGHBOR_PEER_IP = "172.30.0.2"
+NEIGHBOR_CORRECT_AS = 65002
+
+
+class NeighborLabSim:
+    """Deterministic lab: the neighbor object on router_a is the mutable state.
+
+    ``fail_command`` injects per-command failures; ``ignore_activate`` models a
+    restore that recreates the neighbor but never activates it (session returns,
+    routes do not).
+    """
+
+    def __init__(self, *, fail_command=None, ignore_activate: bool = False) -> None:
+        self.neighbor_present = True
+        self.activated = True
+        self.fail_command = fail_command
+        self.ignore_activate = ignore_activate
+        self.mutation_targets: list[str] = []
+
+    @property
+    def session_up(self) -> bool:
+        return self.neighbor_present
+
+    @property
+    def routes_exchanged(self) -> bool:
+        return self.neighbor_present and self.activated
+
+    def _bgp_summary(self, service: str) -> str:
+        if service == "router_a":
+            if not self.neighbor_present:
+                # Live-verified FRR 8.4.1 behavior: with the LAST ipv4-unicast
+                # neighbor removed, the whole ipv4Unicast object is omitted.
+                return _json.dumps({})
+            peers = {NEIGHBOR_PEER_IP: {
+                "state": "Established" if self.session_up else "Idle",
+                "remoteAs": NEIGHBOR_CORRECT_AS,
+            }}
+            local = 65001
+        else:
+            peers = {"172.30.0.1": {
+                "state": "Established" if self.session_up else "Idle",
+                "remoteAs": 65001,
+            }}
+            local = 65002
+        return _json.dumps({"ipv4Unicast": {"as": local, "peers": peers}})
+
+    @staticmethod
+    def _interfaces() -> str:
+        return _json.dumps({
+            "eth1": {"administrativeStatus": "up", "operationalStatus": "up"},
+            "lo": {"administrativeStatus": "up", "operationalStatus": "up"},
+        })
+
+    def _routes(self, service: str) -> str:
+        table: dict[str, list[dict[str, object]]] = {}
+        if service == "router_a":
+            table["10.255.0.1/32"] = [{"protocol": "connected"}]
+            if self.routes_exchanged:
+                table["10.255.0.2/32"] = [{"protocol": "bgp"}]
+        else:
+            table["10.255.0.2/32"] = [{"protocol": "connected"}]
+            if self.routes_exchanged:
+                table["10.255.0.1/32"] = [{"protocol": "bgp"}]
+        return _json.dumps(table)
+
+    def _running_config(self, service: str) -> str:
+        # Canonical serialization: a pure function of the logical state, so a
+        # restored config is byte-identical — the property live FRR provides.
+        if service != "router_a":
+            return (
+                "frr version 8.4.1_git\nhostname router_b\nrouter bgp 65002\n"
+                " neighbor 172.30.0.1 remote-as 65001\n"
+            )
+        lines = ["frr version 8.4.1_git", "hostname router_a", "router bgp 65001"]
+        if self.neighbor_present:
+            lines.append(f" neighbor {NEIGHBOR_PEER_IP} remote-as {NEIGHBOR_CORRECT_AS}")
+        lines.append(" address-family ipv4 unicast")
+        lines.append("  network 10.255.0.1/32")
+        if self.neighbor_present and self.activated:
+            lines.append(f"  neighbor {NEIGHBOR_PEER_IP} activate")
+        lines.append(" exit-address-family")
+        return "\n".join(lines) + "\n"
+
+    @staticmethod
+    def _cmds(logical: list[str]) -> list[str]:
+        return [logical[i + 1] for i in range(len(logical)) if logical[i] == "-c"]
+
+    def __call__(self, argv, timeout_s, max_output_bytes):
+        from verifiednet.runtime.process import RawResult
+
+        a = list(argv)
+        exec_idx = a.index("exec")
+        service = a[exec_idx + 2]
+        logical = a[exec_idx + 3:]
+        cmds = self._cmds(logical)
+        if self.fail_command is not None and self.fail_command(cmds):
+            return RawResult(1, "", "vtysh: command failed", False, False, False)
+        if logical[0] == "ping":
+            return RawResult(0, "1 received", "", False, False, False)
+        first = cmds[0] if cmds else ""
+        if first.startswith("show"):
+            if first == "show ip bgp summary json":
+                return RawResult(0, self._bgp_summary(service), "", False, False, False)
+            if first == "show interface json":
+                return RawResult(0, self._interfaces(), "", False, False, False)
+            if first == "show ip route json":
+                return RawResult(0, self._routes(service), "", False, False, False)
+            if first == "show running-config":
+                return RawResult(0, self._running_config(service), "", False, False, False)
+            raise AssertionError(f"unexpected show: {first!r}")
+        # mutation path
+        self.mutation_targets.append(service)
+        for cmd in cmds:
+            if cmd.startswith("no neighbor"):
+                self.neighbor_present = False
+                self.activated = False
+            elif cmd.startswith("neighbor") and "remote-as" in cmd:
+                self.neighbor_present = True
+            elif cmd.startswith("neighbor") and cmd.endswith("activate"):
+                if not self.ignore_activate:
+                    self.activated = True
+        return RawResult(0, "", "", False, False, False)
+
+
+def build_neighbor_removal_scenario(sim: NeighborLabSim, run_ctx: RunContext, tmp_path):
+    """Wire the REAL scenario + executor + provider around *sim*; returns
+    (scenario, ledger, provider, backend)."""
+    from verifiednet.faults.bgp_neighbor_removal import BgpNeighborRemovalScenario
+    from verifiednet.faults.ledger import Ledger
+    from verifiednet.labs.frr.backend import FrrComposeBackend
+    from verifiednet.labs.frr.scenario_evidence import LiveScenarioEvidenceProvider
+    from verifiednet.labs.frr.topologies import two_router_frr_topology
+    from verifiednet.orchestrator.families import _neighbor_removal_phase_plans
+    from verifiednet.runtime.policy import bgp_neighbor_removal_mutation_shapes
+    from verifiednet.schemas import ScenarioDefinition, ScenarioTimeouts
+    from verifiednet.verifiers.claims import ClaimVerifier
+
+    scenario_definition = ScenarioDefinition(
+        scenario_id="bgp-neighbor-removal-2r-0001",
+        family="bgp",
+        template_id="bgp_neighbor_removal",
+        version=1,
+        parameters={"target_node": "router_a", "target_session": "a-b"},
+        timeouts=ScenarioTimeouts(
+            precondition_s=30.0, onset_s=30.0, recovery_s=60.0,
+            command_s=10.0, poll_interval_s=0.5,
+        ),
+    )
+    topology = two_router_frr_topology()
+    backend = FrrComposeBackend(topology, run_ctx, work_dir=tmp_path, runner=sim)
+    provider = LiveScenarioEvidenceProvider(
+        executor=backend.readonly_executor,
+        topology=topology,
+        run_ctx=run_ctx,
+        target_node="router_a",
+        peer_node="router_b",
+        phase_plans=_neighbor_removal_phase_plans(topology, "router_a", "router_b"),
+    )
+    mutation = backend.build_mutation_adapter(
+        allowed_targets=("router_a",),
+        allowed_shapes=bgp_neighbor_removal_mutation_shapes(),
+    )
+    ledger = Ledger(run_ctx)
+
+    class _Clock:
+        def __init__(self) -> None:
+            self.t = 0.0
+
+        def monotonic(self) -> float:
+            return self.t
+
+        def sleep(self, s: float) -> None:
+            self.t += s
+
+    clock = _Clock()
+    scenario = BgpNeighborRemovalScenario(
+        topology=topology,
+        scenario=scenario_definition,
+        mutation=mutation,
+        ledger=ledger,
+        run_ctx=run_ctx,
+        evidence_provider=provider,
+        verifier=ClaimVerifier(run_ctx),
+        monotonic=clock.monotonic,
+        sleep=clock.sleep,
+    )
+    return scenario, ledger, provider, backend
+
+
+@pytest.fixture
+def neighbor_sim_cls() -> type[NeighborLabSim]:
+    return NeighborLabSim
+
+
+@pytest.fixture
+def build_neighbor_scenario():
+    return build_neighbor_removal_scenario

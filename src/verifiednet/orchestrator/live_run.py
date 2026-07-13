@@ -1,10 +1,15 @@
-"""Gate 4 live composition root — the thin production entry points.
+"""Live composition root — the thin production entry points (Gate 4 + 5.1).
 
 Two functions own one full run each:
 
     start lab → wait for healthy convergence → execute ONE approved path
     → build the incident record → (finally: restore if injected, stop backend)
     → assemble + index + verify the run artifacts.
+
+Gate 5.1: the accepted path is parameterized by an explicit, immutable
+``FaultFamilyBinding`` (default: the Gate 4 remote-AS binding, byte-identical
+behavior). The binding is data — there is no plugin system, registration,
+discovery, or dynamic import.
 
 This is the ONLY place that composes the live backend, the scenario, and the
 artifact assembly. It is not a DAG engine, agent framework, scheduler, or
@@ -23,7 +28,6 @@ from pathlib import Path
 
 from verifiednet.common.errors import VerifiedNetError
 from verifiednet.common.runctx import RunContext
-from verifiednet.faults.bgp_remote_as_mismatch import BgpRemoteAsMismatchScenario
 from verifiednet.faults.ledger import Ledger, LifecyclePhase
 from verifiednet.incidents.builder import build_accepted_record
 from verifiednet.incidents.oracle import build_ground_truth
@@ -35,7 +39,10 @@ from verifiednet.labs.frr.rejected_scenario import (
 )
 from verifiednet.labs.frr.scenario_evidence import LiveScenarioEvidenceProvider
 from verifiednet.orchestrator.assembly import AssembledRun, assemble_verified_run
-from verifiednet.runtime.policy import bgp_remote_as_mutation_shapes
+from verifiednet.orchestrator.families import (
+    REMOTE_AS_MISMATCH_BINDING,
+    FaultFamilyBinding,
+)
 from verifiednet.runtime.process import ProcessRunner, default_runner
 from verifiednet.runtime.transcript import InMemoryTranscript
 from verifiednet.schemas.evidence import Phase
@@ -44,9 +51,8 @@ from verifiednet.schemas.scenario import ScenarioDefinition
 from verifiednet.schemas.topology import TopologySpec
 from verifiednet.verifiers.claims import ClaimVerifier
 
-ROOT_CAUSE = "bgp_remote_as_mismatch"
-_ACCEPTED_GENERATOR = "verifiednet.faults.bgp_remote_as_mismatch"
 _REJECTED_GENERATOR = "verifiednet.labs.frr.rejected_scenario"
+_GENERATOR_VERSION = "0.1.0"
 
 
 class LiveRunError(VerifiedNetError):
@@ -90,8 +96,14 @@ def run_accepted_incident(
     monotonic: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
     convergence_timeout_s: float = 60.0,
+    binding: FaultFamilyBinding = REMOTE_AS_MISMATCH_BINDING,
 ) -> LiveRunResult:
-    """Compose one accepted remote-AS-mismatch run end to end."""
+    """Compose one accepted incident end to end for the bound fault family."""
+    if scenario.template_id != binding.template_id:
+        raise LiveRunError(
+            f"scenario template {scenario.template_id!r} does not match the "
+            f"family binding {binding.template_id!r}"
+        )
     target_node = str(scenario.parameters["target_node"])
     peer_node = _peer_node(topology, target_node)
     transcript = InMemoryTranscript()
@@ -99,15 +111,18 @@ def run_accepted_incident(
         topology, run_ctx, work_dir=work_dir, runner=runner, monotonic=monotonic,
         sleep=sleep, transcript=transcript,
     )
+    phase_plans = None
+    if binding.build_phase_plans is not None:
+        phase_plans = binding.build_phase_plans(topology, target_node, peer_node)
     provider = LiveScenarioEvidenceProvider(
         executor=backend.readonly_executor, topology=topology, run_ctx=run_ctx,
-        target_node=target_node, peer_node=peer_node,
+        target_node=target_node, peer_node=peer_node, phase_plans=phase_plans,
     )
     mutation = backend.build_mutation_adapter(
-        allowed_targets=(target_node,), allowed_shapes=bgp_remote_as_mutation_shapes()
+        allowed_targets=(target_node,), allowed_shapes=binding.mutation_shapes()
     )
     ledger = Ledger(run_ctx)
-    sc = BgpRemoteAsMismatchScenario(
+    sc = binding.build_scenario(
         topology=topology, scenario=scenario, mutation=mutation, ledger=ledger,
         run_ctx=run_ctx, evidence_provider=provider, verifier=ClaimVerifier(run_ctx),
         monotonic=monotonic, sleep=sleep,
@@ -147,7 +162,7 @@ def run_accepted_incident(
         ground_truth = build_ground_truth(
             fault=fault, verdicts=(*onset, *recovery),
             accepted_evidence_ids=(*onset_bundle.evidence_ids, *recovery_bundle.evidence_ids),
-            root_cause_label=ROOT_CAUSE,
+            root_cause_label=binding.root_cause,
         )
         record = build_accepted_record(
             run_ctx=run_ctx, scenario=scenario, topology=topology, fault=fault,
@@ -155,7 +170,9 @@ def run_accepted_incident(
             recovery=recovery_bundle, precondition_results=pre, onset_results=onset,
             recovery_results=recovery, restoration=restoration,
             provenance=ProvenanceInfo(
-                generator=_ACCEPTED_GENERATOR, generator_version="0.1.0", code_commit=git_rev
+                generator=binding.generator,
+                generator_version=_GENERATOR_VERSION,
+                code_commit=git_rev,
             ),
             completed_phases=("precondition", "inject", "onset", "restore", "recovery"),
             cleanup_status="clean",
@@ -224,7 +241,9 @@ def run_precondition_rejected_incident(
         )
         record = rejected.execute(
             provenance=ProvenanceInfo(
-                generator=_REJECTED_GENERATOR, generator_version="0.1.0", code_commit=git_rev
+                generator=_REJECTED_GENERATOR,
+                generator_version=_GENERATOR_VERSION,
+                code_commit=git_rev,
             )
         )
         if any(e.mode == "mutation" for e in transcript.entries):

@@ -45,20 +45,46 @@ _REACH = "reach"
 _ROUTES = "routes"
 _CONFIG = "config"
 
+#: Collector spec names usable in a NodePlan (validated at construction).
+VALID_COLLECTORS = frozenset({_BGP, _IFACE, _REACH, _ROUTES, _CONFIG})
+
 
 @dataclass(frozen=True)
-class _NodePlan:
-    """Collection plan for one node in one phase."""
+class NodePlan:
+    """Collection plan for one node in one phase — pure data (Gate 5.1).
+
+    ``expected_peers`` (additive): peer addresses whose PRESENCE the BGP
+    collector must observe affirmatively (``bgp.peer.<ip>.present``). Empty
+    tuple = Gate 4 behavior, byte-identical.
+    """
 
     node: str
     collectors: tuple[str, ...]
-    route_prefixes: tuple[str, ...]
+    route_prefixes: tuple[str, ...] = ()
+    expected_peers: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        unknown = set(self.collectors) - VALID_COLLECTORS
+        if unknown:
+            raise ValueError(f"unknown collector spec(s) in NodePlan: {sorted(unknown)!r}")
+
+
+#: One collection plan per phase: ``{phase: (NodePlan, ...)}``.
+PhasePlans = dict[Phase, tuple[NodePlan, ...]]
+
+# Backwards-compatible private alias (Gate 4 name).
+_NodePlan = NodePlan
 
 
 class LiveScenarioEvidenceProvider:
-    """Phase-keyed live evidence for the two-router remote-AS scenario.
+    """Phase-keyed live evidence provider — ONE implementation, plan-driven.
 
     Callable: ``provider(phase) -> (sealed EvidenceBundle,)``.
+
+    Gate 5.1: the per-phase collection plans are configurable as PURE DATA via
+    ``phase_plans``. When omitted, the provider builds exactly the Gate 4
+    remote-AS plans (byte-identical evidence for that family). A phase absent
+    from the mapping raises ``ValueError`` — plans are explicit, never guessed.
     """
 
     def __init__(
@@ -70,6 +96,7 @@ class LiveScenarioEvidenceProvider:
         target_node: str,
         peer_node: str,
         command_timeout_s: float = 10.0,
+        phase_plans: PhasePlans | None = None,
     ) -> None:
         self._executor = executor
         self._topology = topology
@@ -77,6 +104,7 @@ class LiveScenarioEvidenceProvider:
         self._target_node = target_node
         self._peer_node = peer_node
         self._timeout_s = command_timeout_s
+        self._phase_plans = dict(phase_plans) if phase_plans is not None else None
 
         # Per-node link peer address (ping destination) and both loopbacks.
         self._reach_dst = {
@@ -95,15 +123,20 @@ class LiveScenarioEvidenceProvider:
 
     # -- phase plans --------------------------------------------------------
 
-    def _plans(self, phase: Phase) -> tuple[_NodePlan, ...]:
+    def _plans(self, phase: Phase) -> tuple[NodePlan, ...]:
+        if self._phase_plans is not None:
+            try:
+                return self._phase_plans[phase]
+            except KeyError:
+                raise ValueError(f"no collection plan for phase: {phase!r}") from None
         target, peer = self._target_node, self._peer_node
         full = (_BGP, _IFACE, _REACH, _ROUTES, _CONFIG)
         if phase in (Phase.PRECONDITION, Phase.BASELINE, Phase.RECOVERY):
             # Healthy/recovered: full observation of both nodes; routes cover
             # both loopbacks so both directions are provable.
             return (
-                _NodePlan(target, full, self._all_loopbacks),
-                _NodePlan(peer, full, self._all_loopbacks),
+                NodePlan(target, full, self._all_loopbacks),
+                NodePlan(peer, full, self._all_loopbacks),
             )
         if phase is Phase.ONSET:
             # Target: session + link health + peer-loopback withdrawal (routes
@@ -112,19 +145,23 @@ class LiveScenarioEvidenceProvider:
             # hash and nothing else (verifier is metric-keyed, target-blind).
             peer_loopback = self._topology.node(self._peer_node).loopback
             return (
-                _NodePlan(target, (_BGP, _IFACE, _REACH, _ROUTES), (peer_loopback,)),
-                _NodePlan(peer, (_CONFIG,), ()),
+                NodePlan(target, (_BGP, _IFACE, _REACH, _ROUTES), (peer_loopback,)),
+                NodePlan(peer, (_CONFIG,), ()),
             )
         raise ValueError(f"unsupported phase: {phase!r}")
 
     # -- collection ---------------------------------------------------------
 
-    def _collect_node(self, plan: _NodePlan, phase: Phase) -> list[EvidenceRecord]:
+    def _collect_node(self, plan: NodePlan, phase: Phase) -> list[EvidenceRecord]:
         records: list[EvidenceRecord] = []
         for name in plan.collectors:
             if name == _BGP:
                 collector: object = BgpSummaryCollector(
-                    self._executor, plan.node, self._run_ctx, self._timeout_s
+                    self._executor,
+                    plan.node,
+                    self._run_ctx,
+                    self._timeout_s,
+                    expected_peers=plan.expected_peers,
                 )
             elif name == _IFACE:
                 collector = InterfaceStateCollector(

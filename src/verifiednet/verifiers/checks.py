@@ -29,6 +29,45 @@ def iface_operational(node: str, iface: str, phase: Phase) -> VerificationCheck:
     )
 
 
+def iface_admin_up(node: str, iface: str, phase: Phase) -> VerificationCheck:
+    metric = f"iface.{iface}.admin"
+    return VerificationCheck(
+        check_id=_check_id("iface_admin_up", node, metric, phase),
+        claim=f"interface {iface} on {node} is administratively up",
+        subject=node,
+        metric=metric,
+        predicate=Predicate.EQUALS,
+        expected=("up",),
+        phase=phase,
+    )
+
+
+def iface_admin_down(node: str, iface: str, phase: Phase) -> VerificationCheck:
+    metric = f"iface.{iface}.admin"
+    return VerificationCheck(
+        check_id=_check_id("iface_admin_down", node, metric, phase),
+        claim=f"interface {iface} on {node} is administratively down",
+        subject=node,
+        metric=metric,
+        predicate=Predicate.EQUALS,
+        expected=("down",),
+        phase=phase,
+    )
+
+
+def iface_oper_down(node: str, iface: str, phase: Phase) -> VerificationCheck:
+    metric = f"iface.{iface}.oper"
+    return VerificationCheck(
+        check_id=_check_id("iface_oper_down", node, metric, phase),
+        claim=f"interface {iface} on {node} is operationally down",
+        subject=node,
+        metric=metric,
+        predicate=Predicate.EQUALS,
+        expected=("down",),
+        phase=phase,
+    )
+
+
 def reachability_ok(node: str, dst_ip: str, phase: Phase) -> VerificationCheck:
     """3/3 ping policy: every probe must succeed."""
     metric = f"ping.{dst_ip}.all_success"
@@ -39,6 +78,54 @@ def reachability_ok(node: str, dst_ip: str, phase: Phase) -> VerificationCheck:
         metric=metric,
         predicate=Predicate.EQUALS,
         expected=("true",),
+        phase=phase,
+    )
+
+
+def reachability_fails(node: str, dst_ip: str, phase: Phase) -> VerificationCheck:
+    """Every probe failed is a fault SYMPTOM proof (affirmative ``"false"``)."""
+    metric = f"ping.{dst_ip}.all_success"
+    return VerificationCheck(
+        check_id=_check_id("reachability_fails", node, metric, phase),
+        claim=f"{node} cannot reach {dst_ip} on every ping probe",
+        subject=node,
+        metric=metric,
+        predicate=Predicate.EQUALS,
+        expected=("false",),
+        phase=phase,
+    )
+
+
+def bgp_peer_present(node: str, peer_ip: str, phase: Phase) -> VerificationCheck:
+    """The peer object EXISTS in the BGP summary (affirmative presence).
+
+    Reads the ``bgp.peer.<ip>.present`` metric that ``BgpSummaryCollector``
+    emits ONLY when the peer was explicitly requested via ``expected_peers`` —
+    presence/absence is an affirmative observation, never inferred from a
+    missing metric.
+    """
+    metric = f"bgp.peer.{peer_ip}.present"
+    return VerificationCheck(
+        check_id=_check_id("bgp_peer_present", node, metric, phase),
+        claim=f"{node} has BGP peer {peer_ip} configured",
+        subject=node,
+        metric=metric,
+        predicate=Predicate.EQUALS,
+        expected=("true",),
+        phase=phase,
+    )
+
+
+def bgp_peer_absent(node: str, peer_ip: str, phase: Phase) -> VerificationCheck:
+    """The peer object DOES NOT exist in the BGP summary (affirmative absence)."""
+    metric = f"bgp.peer.{peer_ip}.present"
+    return VerificationCheck(
+        check_id=_check_id("bgp_peer_absent", node, metric, phase),
+        claim=f"{node} has no BGP peer {peer_ip} configured",
+        subject=node,
+        metric=metric,
+        predicate=Predicate.EQUALS,
+        expected=("false",),
         phase=phase,
     )
 

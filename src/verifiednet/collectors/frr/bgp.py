@@ -11,6 +11,7 @@ malformed JSON raises ``ParserError`` — never a silent fallback.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from typing import ClassVar
 
 from verifiednet.collectors.base import (
@@ -25,7 +26,16 @@ from verifiednet.schemas.evidence import EvidenceRecord, Phase
 
 
 class BgpSummaryCollector:
-    """Collect and normalize the FRR IPv4-unicast BGP summary."""
+    """Collect and normalize the FRR IPv4-unicast BGP summary.
+
+    ``expected_peers`` (Gate 5.1, additive): for each explicitly-requested peer
+    address the collector ALSO emits ``bgp.peer.<ip>.present`` = ``"true"`` or
+    ``"false"`` — mirroring ``RoutePresenceCollector``'s requested-prefix
+    discipline. A removed peer thereby becomes an affirmative ``"false"``
+    observation (FAILable evidence) instead of a silently missing metric
+    (INSUFFICIENT). With the default empty tuple the emitted metrics are
+    byte-identical to Gate 4 behavior.
+    """
 
     name: str = "frr.bgp_summary"
     _ARGV: ClassVar[tuple[str, ...]] = ("vtysh", "-c", "show ip bgp summary json")
@@ -36,11 +46,13 @@ class BgpSummaryCollector:
         target: str,
         run_ctx: RunContext,
         timeout_s: float = 10.0,
+        expected_peers: Sequence[str] = (),
     ) -> None:
         self._executor = executor
         self._target = target
         self._run_ctx = run_ctx
         self._timeout_s = timeout_s
+        self._expected_peers = tuple(expected_peers)
 
     def collect(self, phase: Phase) -> EvidenceRecord:
         result = self._executor.run(self._target, self._ARGV, self._timeout_s)
@@ -59,15 +71,36 @@ class BgpSummaryCollector:
         )
 
     def _parse(self, stdout: str) -> dict[str, str]:
-        return parse_bgp_summary(stdout, name=self.name)
+        normalized = dict(
+            parse_bgp_summary(
+                stdout,
+                name=self.name,
+                allow_missing_af=bool(self._expected_peers),
+            )
+        )
+        for peer_ip in sorted(set(self._expected_peers)):
+            present = f"bgp.peer.{peer_ip}.state" in normalized
+            normalized[f"bgp.peer.{peer_ip}.present"] = "true" if present else "false"
+        return sorted_normalized(normalized)
 
 
-def parse_bgp_summary(stdout: str, *, name: str = "frr.bgp_summary") -> dict[str, str]:
+def parse_bgp_summary(
+    stdout: str, *, name: str = "frr.bgp_summary", allow_missing_af: bool = False
+) -> dict[str, str]:
     """Parse ``show ip bgp summary json`` output into normalized keys.
 
     Module-level so the live BGP convergence helper (Gate 4) can reuse the
     exact same parsing/validation as the collector — one parser, one behavior.
     Raises ``ParserError`` on malformed or structurally missing output.
+
+    ``allow_missing_af`` (Gate 5.2, live-verified): FRR 8.4.1 OMITS the
+    ``ipv4Unicast`` object entirely once the last IPv4-unicast neighbor is
+    removed (observed live on the canonical host during the neighbor-removal
+    incident). In expected-peers mode that absence IS the observation — zero
+    configured peers — so the caller may opt in to receiving ``{}`` instead of
+    a ``ParserError``. The DEFAULT (used by Gate 3/4 collectors and the
+    convergence helper) is unchanged: a missing address family stays a loud
+    parse failure.
     """
     try:
         data = json.loads(stdout)
@@ -77,6 +110,8 @@ def parse_bgp_summary(stdout: str, *, name: str = "frr.bgp_summary") -> dict[str
         raise ParserError(f"{name}: top-level JSON is not an object")
     ipv4 = data.get("ipv4Unicast")
     if not isinstance(ipv4, dict):
+        if allow_missing_af and ipv4 is None:
+            return {}  # zero IPv4-unicast peers configured — real evidence
         raise ParserError(f"{name}: missing ipv4Unicast object")
     local_as = ipv4.get("as")
     if not isinstance(local_as, int) or isinstance(local_as, bool):

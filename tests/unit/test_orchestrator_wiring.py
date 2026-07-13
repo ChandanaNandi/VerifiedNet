@@ -30,6 +30,10 @@ from verifiednet.artifacts import (
 from verifiednet.common.runctx import RunContext
 from verifiednet.labs.frr.topologies import two_router_frr_topology
 from verifiednet.orchestrator import (
+    BGP_NEIGHBOR_REMOVAL_BINDING,
+    REMOTE_AS_MISMATCH_BINDING,
+    FaultFamilyBinding,
+    LiveRunError,
     LiveRunResult,
     run_accepted_incident,
     run_precondition_rejected_incident,
@@ -76,10 +80,16 @@ class _Clock:
 
 
 class FrrLabSim:
-    """Happy-path Docker+FRR simulator (a callable ``ProcessRunner``)."""
+    """Happy-path Docker+FRR simulator (a callable ``ProcessRunner``).
+
+    Models BOTH approved mutation families: the remote-AS value and the
+    neighbor object (presence + activation) on ``router_a``.
+    """
 
     def __init__(self) -> None:
         self.a_remote_as = CORRECT_AS
+        self.a_has_neighbor = True
+        self.a_activated = True
         self._up = False
         self.mutation_targets: list[str] = []
 
@@ -92,24 +102,34 @@ class FrrLabSim:
     # -- FRR read responses -------------------------------------------------
     @property
     def _session_up(self) -> bool:
-        return self.a_remote_as == CORRECT_AS
+        return self.a_has_neighbor and self.a_remote_as == CORRECT_AS
+
+    @property
+    def _routes_exchanged(self) -> bool:
+        return self._session_up and self.a_activated
 
     def _bgp_summary(self, service: str) -> str:
-        peer_ip = PEER_IP if service == "router_a" else "172.30.0.1"
-        remote = self.a_remote_as if service == "router_a" else 65001
-        return json.dumps(
-            {
-                "ipv4Unicast": {
-                    "as": 65001 if service == "router_a" else 65002,
-                    "peers": {
-                        peer_ip: {
-                            "state": "Established" if self._session_up else "Idle",
-                            "remoteAs": remote,
-                        }
-                    },
+        if service == "router_a":
+            if not self.a_has_neighbor:
+                # Live-verified FRR 8.4.1 behavior: with the LAST ipv4-unicast
+                # neighbor removed, the whole ipv4Unicast object is omitted.
+                return json.dumps({})
+            peers = {
+                PEER_IP: {
+                    "state": "Established" if self._session_up else "Idle",
+                    "remoteAs": self.a_remote_as,
                 }
             }
-        )
+            local = 65001
+        else:
+            peers = {
+                "172.30.0.1": {
+                    "state": "Established" if self._session_up else "Idle",
+                    "remoteAs": 65001,
+                }
+            }
+            local = 65002
+        return json.dumps({"ipv4Unicast": {"as": local, "peers": peers}})
 
     @staticmethod
     def _interfaces() -> str:
@@ -124,21 +144,28 @@ class FrrLabSim:
         table: dict[str, list[dict[str, object]]] = {}
         if service == "router_a":
             table["10.255.0.1/32"] = [{"protocol": "connected"}]
-            if self._session_up:
+            if self._routes_exchanged:
                 table["10.255.0.2/32"] = [{"protocol": "bgp"}]
         else:
             table["10.255.0.2/32"] = [{"protocol": "connected"}]
-            if self._session_up:
+            if self._routes_exchanged:
                 table["10.255.0.1/32"] = [{"protocol": "bgp"}]
         return json.dumps(table)
 
     def _running_config(self, service: str) -> str:
-        if service == "router_a":
-            return (
-                "hostname router_a\nrouter bgp 65001\n"
-                f" neighbor {PEER_IP} remote-as {self.a_remote_as}\n"
-            )
-        return "hostname router_b\nrouter bgp 65002\n neighbor 172.30.0.1 remote-as 65001\n"
+        # Canonical: a pure function of the logical state (like live FRR), so a
+        # restored config is byte-identical to its baseline.
+        if service != "router_a":
+            return "hostname router_b\nrouter bgp 65002\n neighbor 172.30.0.1 remote-as 65001\n"
+        lines = ["hostname router_a", "router bgp 65001"]
+        if self.a_has_neighbor:
+            lines.append(f" neighbor {PEER_IP} remote-as {self.a_remote_as}")
+        lines.append(" address-family ipv4 unicast")
+        lines.append("  network 10.255.0.1/32")
+        if self.a_has_neighbor and self.a_activated:
+            lines.append(f"  neighbor {PEER_IP} activate")
+        lines.append(" exit-address-family")
+        return "\n".join(lines) + "\n"
 
     @staticmethod
     def _cmds(logical: list[str]) -> list[str]:
@@ -164,10 +191,15 @@ class FrrLabSim:
             raise AssertionError(f"unhandled show command: {first!r}")
         # mutation path
         self.mutation_targets.append(service)
-        if not any(c.startswith("clear bgp") for c in cmds):
-            for c in cmds:
-                if c.startswith("neighbor") and "remote-as" in c:
-                    self.a_remote_as = int(c.split()[-1])
+        for c in cmds:
+            if c.startswith("no neighbor"):
+                self.a_has_neighbor = False
+                self.a_activated = False
+            elif c.startswith("neighbor") and "remote-as" in c:
+                self.a_has_neighbor = True
+                self.a_remote_as = int(c.split()[-1])
+            elif c.startswith("neighbor") and c.endswith("activate"):
+                self.a_activated = True
         return RawResult(0, "", "", False, False, False)
 
     def __call__(
@@ -196,20 +228,41 @@ class FrrLabSim:
         raise AssertionError(f"unhandled command: {a!r}")
 
 
-def _run_accepted(out_root: Path, run_id: str, tmp_path: Path) -> LiveRunResult:
+def _nr_scenario() -> ScenarioDefinition:
+    return ScenarioDefinition(
+        scenario_id="bgp-neighbor-removal-2r-0001",
+        family="bgp",
+        template_id="bgp_neighbor_removal",
+        version=1,
+        parameters={"target_node": "router_a", "target_session": "a-b"},
+        timeouts=ScenarioTimeouts(
+            precondition_s=5.0, onset_s=3.0, recovery_s=3.0, command_s=10.0, poll_interval_s=0.5
+        ),
+    )
+
+
+def _run_accepted(
+    out_root: Path,
+    run_id: str,
+    tmp_path: Path,
+    *,
+    binding: FaultFamilyBinding = REMOTE_AS_MISMATCH_BINDING,
+    scenario: ScenarioDefinition | None = None,
+) -> LiveRunResult:
     clock = _Clock()
     return run_accepted_incident(
         out_root=out_root,
         work_dir=tmp_path / run_id,
         run_ctx=RunContext(run_id, clock=_fixed_clock),
         topology=two_router_frr_topology(),
-        scenario=_scenario(),
+        scenario=scenario if scenario is not None else _scenario(),
         git_rev=GIT_REV,
         lock_hash=LOCK_HASH,
         runner=FrrLabSim(),
         monotonic=clock.monotonic,
         sleep=clock.sleep,
         convergence_timeout_s=5.0,
+        binding=binding,
     )
 
 
@@ -274,6 +327,80 @@ def test_accepted_and_rejected_share_one_index(tmp_path: Path) -> None:
     result = verify_run_index(out_root)
     assert result.verified is True
     assert len(result.checks) >= 2
+
+
+def test_neighbor_removal_run_through_binding(tmp_path: Path) -> None:
+    # Gate 5.2: the SAME composition entry point runs the new family via its
+    # explicit binding — accepted, assembled, indexed, reload-verified.
+    out_root = tmp_path / "runs"
+    result = _run_accepted(
+        out_root,
+        "run-wire-nr1",
+        tmp_path,
+        binding=BGP_NEIGHBOR_REMOVAL_BINDING,
+        scenario=_nr_scenario(),
+    )
+
+    assert result.convergence.converged is True
+    record = result.assembled.loaded.incident
+    assert record.status == "accepted"
+    assert record.scenario.template_id == "bgp_neighbor_removal"
+    assert record.ground_truth is not None
+    assert record.ground_truth.root_cause_label == "bgp_neighbor_removal"
+    assert record.fault is not None and record.fault.parameter_name == "neighbor"
+    # byte-identical config recovery is part of the persisted verdict set
+    assert any(
+        "config_unchanged:router_a" in v.check_id
+        for v in record.ground_truth.verdicts
+    )
+    # remove/restore/clear = 3 mutation pairs, router_a only
+    muts = [e for e in result.assembled.loaded.transcript if e.mode == "mutation"]
+    assert len([e for e in muts if e.stage == "pending"]) == 3
+    assert all(e.target == "router_a" for e in muts)
+    reloaded = load_verified_run_from_index(out_root, "run-wire-nr1")
+    assert reloaded.incident == record
+
+
+def test_binding_template_mismatch_is_refused(tmp_path: Path) -> None:
+    # A remote-AS scenario definition under the neighbor-removal binding is a
+    # composition error and must be refused before any lab action.
+    with pytest.raises(LiveRunError, match="does not match the"):
+        _run_accepted(
+            tmp_path / "runs",
+            "run-wire-mismatch",
+            tmp_path,
+            binding=BGP_NEIGHBOR_REMOVAL_BINDING,
+            scenario=_scenario(),
+        )
+
+
+def test_cross_family_runs_share_one_index(tmp_path: Path) -> None:
+    # Gate 5.2 cross-family regression: a remote-AS run and a neighbor-removal
+    # run coexist in ONE verified index and each loads back through it.
+    out_root = tmp_path / "runs"
+    ras = _run_accepted(out_root, "run-wire-xfam-ras", tmp_path)
+    nr = _run_accepted(
+        out_root,
+        "run-wire-xfam-nr",
+        tmp_path,
+        binding=BGP_NEIGHBOR_REMOVAL_BINDING,
+        scenario=_nr_scenario(),
+    )
+
+    index = load_run_index(out_root)
+    templates = {e.run_id: e.template_id for e in index.entries}
+    assert templates == {
+        "run-wire-xfam-ras": "bgp_remote_as_mismatch",
+        "run-wire-xfam-nr": "bgp_neighbor_removal",
+    }
+    assert verify_run_index(out_root).verified is True
+    assert ras.assembled.run_digest != nr.assembled.run_digest
+    ras_loaded = load_verified_run_from_index(out_root, "run-wire-xfam-ras")
+    nr_loaded = load_verified_run_from_index(out_root, "run-wire-xfam-nr")
+    assert ras_loaded.incident.ground_truth is not None
+    assert nr_loaded.incident.ground_truth is not None
+    assert ras_loaded.incident.ground_truth.root_cause_label == "bgp_remote_as_mismatch"
+    assert nr_loaded.incident.ground_truth.root_cause_label == "bgp_neighbor_removal"
 
 
 def test_tampering_one_indexed_run_fails_index_verification(tmp_path: Path) -> None:

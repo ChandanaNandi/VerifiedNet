@@ -162,6 +162,41 @@ def bgp_remote_as_mutation_shapes() -> tuple[MutationCommandShape, ...]:
     )
 
 
+def bgp_neighbor_removal_mutation_shapes() -> tuple[MutationCommandShape, ...]:
+    """The only three mutation shapes the neighbor-removal scenario is permitted.
+
+    Gate 5.2. ``remove_neighbor`` deletes the peer object; ``restore_neighbor``
+    recreates it exactly as the rendered baseline does — including the
+    load-bearing ``neighbor <ip> activate`` under ``address-family ipv4
+    unicast`` (the lab renders ``no bgp default ipv4-unicast``). ``clear_bgp``
+    is the same forced-reset shape the remote-AS family uses.
+    """
+    return (
+        MutationCommandShape(
+            name="remove_neighbor",
+            commands=(
+                re.compile(r"configure terminal"),
+                re.compile(rf"router bgp {_ASN}"),
+                re.compile(rf"no neighbor {_IPV4}"),
+            ),
+        ),
+        MutationCommandShape(
+            name="restore_neighbor",
+            commands=(
+                re.compile(r"configure terminal"),
+                re.compile(rf"router bgp {_ASN}"),
+                re.compile(rf"neighbor {_IPV4} remote-as {_ASN}"),
+                re.compile(r"address-family ipv4 unicast"),
+                re.compile(rf"neighbor {_IPV4} activate"),
+            ),
+        ),
+        MutationCommandShape(
+            name="clear_bgp",
+            commands=(re.compile(rf"clear bgp {_IPV4}"),),
+        ),
+    )
+
+
 @dataclass(frozen=True)
 class MutationCommandPolicy:
     """Mutation-path command policy: binary allow-list plus exact vtysh shapes.

@@ -112,6 +112,74 @@ def test_bgp_summary_idle_wrong_as(run_ctx: RunContext) -> None:
     assert list(record.normalized) == sorted(record.normalized)
 
 
+def test_bgp_summary_expected_peer_present(run_ctx: RunContext) -> None:
+    # Gate 5.1: a requested peer that IS configured yields present="true".
+    executor = FakeExecutor()
+    executor.script(BGP_ARGV, {"stdout": _fixture("bgp_summary_established.json")})
+    record = BgpSummaryCollector(
+        executor, "router_a", run_ctx, expected_peers=("172.30.0.2",)
+    ).collect("baseline")
+    assert record.normalized["bgp.peer.172.30.0.2.present"] == "true"
+    assert record.normalized["bgp.peer.172.30.0.2.state"] == "Established"
+    assert list(record.normalized) == sorted(record.normalized)
+
+
+def test_bgp_summary_expected_peer_absent_is_affirmative(run_ctx: RunContext) -> None:
+    # Gate 5.1: a requested-but-missing peer is AFFIRMATIVE "false" evidence —
+    # never a silently missing metric (which would verify as INSUFFICIENT).
+    import json as _j
+
+    executor = FakeExecutor()
+    executor.script(
+        BGP_ARGV,
+        {"stdout": _j.dumps({"ipv4Unicast": {"as": 65001, "peers": {}}})},
+    )
+    record = BgpSummaryCollector(
+        executor, "router_a", run_ctx, expected_peers=("172.30.0.2",)
+    ).collect("onset")
+    assert record.normalized == {
+        "bgp.local_as": "65001",
+        "bgp.peer.172.30.0.2.present": "false",
+    }
+
+
+def test_bgp_summary_missing_af_with_expected_peers(run_ctx: RunContext) -> None:
+    # Live-verified FRR 8.4.1: removing the LAST neighbor omits the whole
+    # ipv4Unicast object. In expected-peers mode that IS the zero-peers
+    # observation: only affirmative present="false" keys are emitted.
+    import json as _j
+
+    executor = FakeExecutor()
+    executor.script(BGP_ARGV, {"stdout": _j.dumps({})})
+    record = BgpSummaryCollector(
+        executor, "router_a", run_ctx, expected_peers=("172.30.0.2",)
+    ).collect("onset")
+    assert record.normalized == {"bgp.peer.172.30.0.2.present": "false"}
+
+
+def test_bgp_summary_missing_af_without_expected_peers_still_raises(
+    run_ctx: RunContext,
+) -> None:
+    # The DEFAULT parser contract is unchanged: a missing address family is a
+    # loud parse failure for Gate 3/4 collectors and the convergence helper.
+    import json as _j
+
+    from verifiednet.common.errors import ParserError
+
+    executor = FakeExecutor()
+    executor.script(BGP_ARGV, {"stdout": _j.dumps({})})
+    with pytest.raises(ParserError, match="missing ipv4Unicast"):
+        BgpSummaryCollector(executor, "router_a", run_ctx).collect("onset")
+
+
+def test_bgp_summary_without_expected_peers_is_unchanged(run_ctx: RunContext) -> None:
+    # Gate 5.1: the default is byte-identical Gate 4 behavior — no present keys.
+    executor = FakeExecutor()
+    executor.script(BGP_ARGV, {"stdout": _fixture("bgp_summary_established.json")})
+    record = BgpSummaryCollector(executor, "router_a", run_ctx).collect("baseline")
+    assert not any(key.endswith(".present") for key in record.normalized)
+
+
 def test_evidence_id_content_derived() -> None:
     raw_established = _fixture("bgp_summary_established.json")
     raw_idle = _fixture("bgp_summary_idle_wrong_as.json")
