@@ -1,22 +1,30 @@
 # Gate 6.0 — Splitting Strategy
 
-**Status:** PLANNING ONLY. Designs deterministic, reproducible, randomness-free
-train/dev/test splits and the reserved benchmark/challenge partitions, driven
-entirely by immutable content.
+**Status:** train/dev/test assignment is now IMPLEMENTED in
+`verifiednet.datasets.splitting` (Gate 6.2 Part 2); see
+`rejected-examples-and-leakage-safe-splits.md`. The reserved
+benchmark/hidden-benchmark/challenge partitions remain PLANNING ONLY. All splits
+are deterministic, reproducible, and randomness-free, driven entirely by
+immutable content.
 
 ## 1. Determinism: split assignment is a pure function
 
 Split assignment is a pure function of the leakage `group_id` and the build
-config — **no randomness, ever**:
+config — **no randomness, ever**. The implemented form uses an integer bucket
+space (`SPLIT_BUCKET_COUNT = 10_000`) so ratios are exact with no floating-point
+instability:
 
 ```
-bucket(group_id) = int(sha256_canonical([split_salt, group_id])[:16], 16)
-                   scaled onto the configured split_ratios boundaries
+bucket(group_id) = int(sha256_canonical({algorithm_version, split_salt, group_id}), 16)
+                   % SPLIT_BUCKET_COUNT
+train      if bucket <  train_buckets
+validation if bucket <  train_buckets + validation_buckets
+test       otherwise
 ```
 
-- `split_salt` is a fixed string recorded in the dataset manifest. The same
-  `split_salt` + same `split_ratios` + same `group_id` → the same split,
-  forever.
+- `split_salt` is a fixed, non-empty string recorded on the `SplitPolicy` (and,
+  in Part 3, the dataset manifest). The same `split_salt` + same bucket counts +
+  same `group_id` → the same split, forever.
 - Assignment is per GROUP, then every run in the group inherits the group's
   split. Two runs sharing a `group_id` therefore land in the same split by
   construction (the leakage invariant holds by design, and is re-asserted after
@@ -45,6 +53,10 @@ the digest.
 - **train / dev / test** — the default three-way split at `group_id`
   granularity via the bucket function above. Ratios are config (a sensible
   default such as 70/15/15 is a build parameter, not hard-coded truth).
+- **abstention (IMPLEMENTED)** — the eval-only home of rejected
+  (no-fault-label) runs. Abstention examples bypass the bucket space entirely
+  and are assigned under a fixed `abstention-v1` policy id, so no rejected run
+  is ever a train/dev/test member (ADR-0018 §8).
 - **future benchmark** — a named, stable subset drawn deterministically from
   `test` (or a dedicated pool) for cross-gate comparison; frozen by its own
   digest so Gates 7/8/12 measure against an unchanging target.

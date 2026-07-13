@@ -1,8 +1,12 @@
 # Gate 6.0 — Verified Dataset Engine: Engineering Plan
 
-**Status:** PLANNING ONLY. No source, test, CI, Docker, schema, or Python file
-was created or modified. This document designs the Gate 6 Verified Dataset
-Engine as an engineering specification for later implementation (Gate 6.1+).
+**Status:** PARTIALLY IMPLEMENTED. Gate 6.1 (models, discovery, read-only
+projection) and Gate 6.2 Part 2 (rejected-as-abstention projection, deterministic
+integer-bucket splitting, and the fail-closed leakage audit) now exist in
+`verifiednet.datasets`; see `rejected-examples-and-leakage-safe-splits.md`. The
+corpus writer/reader/verifier, `DatasetManifest`, `dataset_digest`, and export
+remain PLANNING ONLY (Gate 6 Part 3). This document remains the governing
+engineering specification.
 
 The single governing principle: **the dataset engine is a deterministic,
 read-only PROJECTION of already-verified runs. It never creates, relabels,

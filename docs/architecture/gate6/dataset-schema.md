@@ -1,9 +1,13 @@
 # Gate 6.0 — Dataset Schema (Object, Provenance, Versioning)
 
-**Status:** PLANNING ONLY. This specifies the PROPOSED dataset example and
-manifest shapes for Gate 6.1 to implement. No Python or schema file is created
-in this task; the field names below are a design proposal, subject to
-implementation-time refinement, not a committed contract.
+**Status:** the dataset EXAMPLE shape is now IMPLEMENTED in
+`verifiednet.datasets.models` (Gate 6.1/6.2 Part 2), extended additively with
+`example_kind`, `stable_identity`, and rejected-run source facts, plus the
+`SplitPolicy`, `AssignedDatasetExample`, and leakage-audit models; see
+`rejected-examples-and-leakage-safe-splits.md`. The `DatasetManifest` and the
+non-recursive `dataset_digest` remain PLANNING ONLY (Part 3). Field names below
+are the design proposal; the committed contract is the code and its contract
+tests (`tests/contract/test_datasets_shapes.py`).
 
 ## 1. The dataset example (one verified run, projected)
 

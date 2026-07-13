@@ -331,6 +331,105 @@ def write_inputs() -> Callable[..., object]:
 
 
 # --------------------------------------------------------------------------
+# Gate 6.2: rejected precondition run with a DISTINCT stable identity.
+#
+# The rejected run must NOT share a leakage group with any accepted catalog
+# case, so it uses a distinct template + scenario_id + an IMPOSSIBLE target
+# prefix (203.0.113.99/32) whose precondition (prefix present before
+# withdrawal) fails. It carries a sealed baseline, no fault, no ground truth,
+# no restoration, an empty ledger, and ZERO mutation transcript entries.
+# --------------------------------------------------------------------------
+
+REJECT_IMPOSSIBLE_PREFIX = "203.0.113.99/32"
+
+
+def make_rejected_prefix_scenario() -> ScenarioDefinition:
+    return ScenarioDefinition(
+        scenario_id="bgp-prefix-withdrawal-reject-2r-0001",
+        family="bgp",
+        template_id="bgp_prefix_withdrawal",
+        version=1,
+        parameters={
+            "target_prefix": REJECT_IMPOSSIBLE_PREFIX,
+            "target_node": "router_a",
+            "target_session": "a-b",
+        },
+        timeouts=ScenarioTimeouts(
+            precondition_s=30.0, onset_s=30.0, recovery_s=60.0,
+            command_s=10.0, poll_interval_s=0.5,
+        ),
+    )
+
+
+def build_rejected_prefix_inputs(run_id: str = "run-rej-prefix") -> RunInputs:
+    """A precondition-rejected run for an impossible target prefix (distinct id)."""
+    from verifiednet.common.hashing import sha256_canonical
+    from verifiednet.incidents.builder import build_rejected_record
+    from verifiednet.schemas import (
+        Phase,
+        ProvenanceInfo,
+        RejectionCode,
+        RunManifest,
+        Verdict,
+        VerificationResult,
+    )
+
+    rc = RunContext(run_id, clock=lambda: EPOCH)
+    topo = make_two_router_topology()
+    scen = make_rejected_prefix_scenario()
+    baseline = _evidence_bundle(
+        rc, Phase.PRECONDITION, "router_a",
+        {f"route.{REJECT_IMPOSSIBLE_PREFIX}.present": "false"},
+    )
+    ev_id = baseline.records[0].evidence_id
+    vr = VerificationResult(
+        check_id=f"route_present:router_a:route.{REJECT_IMPOSSIBLE_PREFIX}.present:precondition",
+        verdict=Verdict.FAIL, phase="precondition", evidence_ids=(ev_id,),
+        observed=("false",), evaluated_at_seq=rc.next_seq(), evaluated_at=EPOCH,
+    )
+    prov = ProvenanceInfo(generator="g", generator_version="0.1.0", code_commit="deadbeef")
+    incident = build_rejected_record(
+        run_ctx=rc, scenario=scen, topology=topo, baseline=baseline,
+        rejection_code=RejectionCode.PRECONDITION_FAILED,
+        details=f"required prefix {REJECT_IMPOSSIBLE_PREFIX} was absent on router_a",
+        failed_phase="precondition", precondition_results=(vr,), provenance=prov,
+        completed_phases=(), cleanup_status="clean",
+    )
+    rm = RunManifest(
+        run_id=run_id, git_rev="deadbeef", lock_hash="b" * 64, scenario_id=scen.scenario_id,
+        template_id=scen.template_id, topology_hash=sha256_canonical(topo), started_at=EPOCH,
+        acceptance_status="rejected",
+    )
+    return RunInputs(rm, _env_manifest(), incident, (), ())
+
+
+def write_and_index_run(inputs: RunInputs, out_root: object) -> object:
+    """Write a RunInputs to *out_root* and add it to the run index."""
+    from verifiednet.artifacts import add_run_to_index, write_run_artifacts
+
+    written = write_run_artifacts(
+        out_root=out_root,  # type: ignore[arg-type]
+        run_manifest=inputs.run_manifest,  # type: ignore[arg-type]
+        environment_manifest=inputs.environment_manifest,  # type: ignore[arg-type]
+        incident=inputs.incident,  # type: ignore[arg-type]
+        transcript_entries=inputs.transcript_entries,
+        ledger_records=inputs.ledger_records,
+    )
+    add_run_to_index(out_root, written.run_id)  # type: ignore[arg-type]
+    return written
+
+
+@pytest.fixture
+def make_rejected_prefix_inputs() -> Callable[[str], RunInputs]:
+    return build_rejected_prefix_inputs
+
+
+@pytest.fixture
+def write_indexed_run() -> Callable[..., object]:
+    return write_and_index_run
+
+
+# --------------------------------------------------------------------------
 # Gate 5.2: deterministic neighbor-removal lab sim + builder, shared by the
 # unit and failure tiers (tests/ is not a package; shared helpers live here).
 # --------------------------------------------------------------------------

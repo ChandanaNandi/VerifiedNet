@@ -83,19 +83,24 @@ None of these requires an example-schema change to add later.
 
 ## 4. Proposed Gate 6 substeps
 
-- **Gate 6.0 — this plan.** Docs + ADR-0018 only. Stop: committed, CI green.
-- **Gate 6.1 — dataset schema + read-only discovery + integrity gate.** The
-  frozen example/manifest models; discovery over the run index; before-inclusion
-  verification; NO splitting yet. Offline tests over the existing verified runs
-  (rebuild the run library offline via the catalog sim, or read fixtures).
-- **Gate 6.2 — grouping + deterministic splitting.** `group_id`, sibling tags,
-  the pure bucket function, split-invariant enforcement, build-twice determinism
-  test.
-- **Gate 6.3 — dataset digest + verifier + coverage/provenance.** Non-recursive
-  `dataset_digest`; the dataset verifier; duplicate detection; coverage report;
-  provenance chain.
-- **Gate 6.4 — accepted/rejected partitioning + features/labels separation.**
-  The abstention partition; the features-only view; label file.
+- **Gate 6.0 — this plan.** Docs + ADR-0018 only. DONE: committed, CI green.
+- **Gate 6.1 — dataset schema + read-only discovery + integrity gate. DONE.**
+  The frozen example/manifest models; discovery over the run index;
+  before-inclusion verification; offline tests over the existing verified runs
+  (run library rebuilt offline via the catalog sim).
+- **Gate 6.2 (Part 2) — grouping + deterministic splitting + abstention +
+  leakage audit. DONE.** Stable-identity `group_id`, rejected runs projected as
+  eval-only abstention examples, the pure integer-bucket split function
+  (`SPLIT_BUCKET_COUNT = 10_000`), the separate `AssignedDatasetExample`
+  binding, group-cohesion enforcement, sibling tags as INFO findings, and the
+  fail-closed `audit_leakage`. The abstention partition (originally sketched for
+  6.4) landed here because rejected-as-abstention is inseparable from splitting.
+  See `rejected-examples-and-leakage-safe-splits.md`.
+- **Gate 6.3 (Part 3) — corpus writer/reader + dataset digest + verifier +
+  coverage/provenance.** The dataset writer/reader; non-recursive
+  `dataset_digest`; `DatasetManifest`; the dataset verifier; duplicate
+  detection; coverage report; build-twice determinism test; bulk export.
+- **Gate 6.4 — features/labels separation.** The features-only view; label file.
 - **Gate 6.5 — closure.** Completion report + acceptance matrix; propose (NOT
   create) `v0.6-gate6-complete`.
 

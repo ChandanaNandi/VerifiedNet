@@ -1,9 +1,13 @@
 # Gate 6.0 — Leakage Analysis
 
-**Status:** PLANNING ONLY. This is the most important Gate 6 design section: a
-leakage that survives here is inherited by every later gate (evaluation,
-baselines, SLM, RAG, GraphRAG). The rule is conservative by default — **when in
-doubt, group together (never split apart).**
+**Status:** the grouping key (§0) and the machine-checked "no `group_id` spans
+splits" invariant (§2) are now IMPLEMENTED in `verifiednet.datasets`
+(`group_id_for_identity`, `audit_leakage`); see
+`rejected-examples-and-leakage-safe-splits.md`. The challenge-set grouping
+elevations (§3) remain PLANNING ONLY. This is the most important Gate 6 design
+section: a leakage that survives here is inherited by every later gate
+(evaluation, baselines, SLM, RAG, GraphRAG). The rule is conservative by
+default — **when in doubt, group together (never split apart).**
 
 ## 0. The stable grouping key (the crux)
 
