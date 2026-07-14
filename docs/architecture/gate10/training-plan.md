@@ -172,7 +172,9 @@ The plan is a contract, not a promise of bitwise-identical weights: real GPU
 training may be `best_effort_deterministic` at best, which is exactly why the
 determinism claim is recorded rather than assumed. `FakeTrainer` proves
 orchestration, not learning. World size is locked to 1; adapters, quantized
-loading, distributed shapes, and checkpoints are all later gates. The
-execution gate that follows consumes a verified plan and adds ONLY execution —
-every configuration decision has already been made, hashed, and persisted
-here.
+loading, distributed shapes, and checkpoints are all later gates. Gate 10C
+(implemented — see `training-execution.md`, ADR-0024) consumes a verified plan
+and adds execution ORCHESTRATION, still simulation-only: states, events,
+resume, retry, and replay verification. Checkpoint contracts (Gate 10D) and
+the first real trainer backend (Gate 10E) follow behind it — every
+configuration decision has already been made, hashed, and persisted here.

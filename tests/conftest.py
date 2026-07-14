@@ -690,6 +690,45 @@ def plan_pipeline(eval_pipeline) -> Callable[..., object]:
     return _helper
 
 
+@pytest.fixture
+def execution_pipeline(plan_pipeline) -> Callable[..., object]:
+    """Gate 10C chain: verified plan + fake execution engine + retry policy.
+
+    ``helper(tmp_path, accepted=[...], rejected=[...])`` returns an object with
+    ``.plan`` (a default TrainingPlan), ``.engine`` (FakeExecutionEngine),
+    ``.policy`` (max_retries=2, allow_resume=True by default), ``.make_plan``
+    (rebuild the plan from spec overrides), and ``.planctx`` (the underlying
+    plan_pipeline context). Default plan shape: 3 examples / batch 2 =
+    2 batches/epoch; accumulation 2 = 1 step/epoch; 3 epochs = 3 steps.
+    """
+    from dataclasses import dataclass as _dc
+
+    from verifiednet.training import FakeExecutionEngine, build_execution_policy
+
+    @_dc(frozen=True)
+    class _X:
+        plan: object
+        engine: object
+        policy: object
+        make_plan: object
+        planctx: object
+
+    def _helper(tmp_path, *, accepted, rejected=(), max_retries=2,
+                allow_resume=True):
+        ctx = plan_pipeline(tmp_path, accepted=accepted, rejected=rejected)
+
+        def make_plan(**spec_overrides):
+            return ctx.trainer.plan(spec=ctx.make_spec(**spec_overrides),
+                                    corpus=ctx.descriptor)
+
+        return _X(plan=make_plan(), engine=FakeExecutionEngine(),
+                  policy=build_execution_policy(
+                      max_retries=max_retries, allow_resume=allow_resume),
+                  make_plan=make_plan, planctx=ctx)
+
+    return _helper
+
+
 # --------------------------------------------------------------------------
 # Gate 5.2: deterministic neighbor-removal lab sim + builder, shared by the
 # unit and failure tiers (tests/ is not a package; shared helpers live here).

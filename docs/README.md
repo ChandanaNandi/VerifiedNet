@@ -121,8 +121,22 @@ arithmetic and honest determinism claims; a `FakeTrainer` proving the
 machinery offline; and immutable, verified `training-plans/<id>/` artifacts.
 **No fine-tuning occurs in Gate 10B** — no ML framework is imported
 (AST-enforced and import-trapped). See `architecture/gate10/training-plan.md`.
+Gate 10C (deterministic training execution framework) is implemented with
+ADR-0024: execution is a closed state machine
+(planned→validated→starting→running→completed, with failed/cancelled branches
+and failed→resumed→running), recorded as an ordered, hash-chained,
+timestamp-free event log that the model validator verifies by REPLAY (the
+deterministic simulator's log is a pure function of its header, so any
+dropped/duplicated/reordered/edited event fails at parse time); execution ids
+derive from plan + capability + retry policy + retry number (a retry is a new
+execution, one authoritative outcome per identity); resume continues exactly
+where a failure stopped (property-proven for every failure point); and
+executions persist as immutable verified `training-executions/<id>/`
+artifacts. **Execution is simulation-only in Gate 10C** — Literal-locked
+`simulated=True`, fake engine only, no ML framework imported. See
+`architecture/gate10/training-execution.md`.
 Layers beyond are **planned, not
-implemented** — no training execution, fine-tuning, prompt optimization, RAG,
+implemented** — no checkpoint artifacts, real fine-tuning, prompt optimization, RAG,
 GraphRAG, agent, memory, or persistent workflow exists yet. The deterministic
 trust core (labs →
 faults → evidence → verification → oracle → incidents → recovery → artifacts → index) is
