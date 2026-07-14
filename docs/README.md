@@ -99,9 +99,19 @@ comparison metrics and a fully tie-broken ranking, and immutable benchmark
 artifacts (`benchmarks/<id>/manifest+comparison+ranking`) with a self-validating
 `benchmark_digest` and a verifier that recomputes ranking-from-comparison. The
 benchmark compares predictors and never changes evaluation; predictors still
-receive only features. See `architecture/gate9/benchmark-framework.md`. Layers
-beyond are **planned, not implemented** — no prompt optimization, fine-tuning,
-RAG, GraphRAG, agent, memory, or persistent workflow exists yet. The
-deterministic trust core (labs →
+receive only features. See `architecture/gate9/benchmark-framework.md`.
+Gate 10A (training readiness) is implemented with ADR-0022: a deterministic,
+immutable supervised training-corpus layer (`verifiednet.training`) derived from
+the prepared corpus. Eligibility is Literal-locked to train-partition
+accepted-diagnosis examples (validation/test/abstention structurally excluded);
+model input is an allowlist rendering of model-visible features; the target is
+canonical JSON from the authoritative label; audit metadata stays separate; the
+trainer-facing loader returns only input/target pairs; partition isolation is
+proven by test; and the training package may not import evaluation or any
+model-training library (AST-enforced). **No model training occurs in Gate 10A.**
+See `architecture/gate10/training-corpus.md`. Layers beyond are **planned, not
+implemented** — no training runner, fine-tuning, prompt optimization, RAG,
+GraphRAG, agent, memory, or persistent workflow exists yet. The deterministic
+trust core (labs →
 faults → evidence → verification → oracle → incidents → recovery → artifacts → index) is
 fixed and is never replaced by a model. See `architecture/gate3/limitations.md`.

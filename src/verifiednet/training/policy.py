@@ -1,0 +1,297 @@
+"""Training eligibility policy + input/target templates (Gate 10A).
+
+These three frozen, versioned, content-addressed contracts define exactly which
+prepared examples may enter supervised training and what a training example's
+input and target look like:
+
+* ``TrainingDataPolicy`` — eligibility. The Gate 10A policy is LOCKED by Literal
+  types to: source partition ``train`` only, accepted-fault examples only,
+  accepted-diagnosis labels only, abstention excluded. A policy permitting
+  anything else cannot be constructed in this gate.
+* ``TrainingInputTemplate`` — the exact model input a future trainer will
+  tokenize, rendered as a pure function of the model-visible ``DatasetFeatures``
+  only. It is deliberately INDEPENDENT of the Gate 8 inference prompt: the
+  training package may not import ``verifiednet.evaluation`` (evaluation
+  isolation, ADR-0022), so the two templates carry distinct explicit identities
+  rather than a silently shared implementation.
+* ``TrainingTargetTemplate`` — the exact supervised target, serialized as
+  canonical JSON so equivalent labels are byte-identical.
+
+Every id is a pure content hash — no timestamps, hosts, users, env, or paths.
+"""
+
+from __future__ import annotations
+
+from typing import Literal
+
+from pydantic import Field, model_validator
+
+from verifiednet.common.canonical import canonical_json_str
+from verifiednet.common.hashing import sha256_canonical
+from verifiednet.datasets.features import DatasetFeatures
+from verifiednet.schemas.base import StrictModel
+
+TRAINING_POLICY_VERSION = 1
+INPUT_TEMPLATE_VERSION = 1
+TARGET_TEMPLATE_VERSION = 1
+
+#: The fault-family class space presented in the training input (the four Gate 5
+#: families). This is the public classification class space — not the answer for
+#: any specific example — mirroring the Gate 8 prompt's class list by DESIGN
+#: DECISION, not by shared code (see module docstring).
+TRAINING_CANDIDATE_FAMILIES: tuple[str, ...] = (
+    "bgp_neighbor_removal",
+    "bgp_prefix_withdrawal",
+    "bgp_remote_as_mismatch",
+    "iface_admin_shutdown",
+)
+
+_INPUT_INSTRUCTIONS = (
+    "You are a deterministic network fault-diagnosis classifier. You are given "
+    "only observation metadata about one verified network run. Decide which "
+    "fault family the observed fault belongs to, strictly from the candidate "
+    "list."
+)
+
+_TARGET_SCHEMA_DESCRIPTION = (
+    'One canonical JSON object: {"fault_family": <candidate family>, '
+    '"prediction_type": "diagnosis"} with keys sorted and no whitespace.'
+)
+
+
+def derive_training_data_policy_id(
+    *,
+    schema_version: int,
+    policy_version: int,
+    allowed_partition: str,
+    allowed_example_kind: str,
+    allowed_label_kind: str,
+    task_id: str,
+    input_template_id: str,
+    target_template_id: str,
+    include_abstention: bool,
+) -> str:
+    payload = {
+        "schema_version": schema_version,
+        "policy_version": policy_version,
+        "allowed_partition": allowed_partition,
+        "allowed_example_kind": allowed_example_kind,
+        "allowed_label_kind": allowed_label_kind,
+        "task_id": task_id,
+        "input_template_id": input_template_id,
+        "target_template_id": target_template_id,
+        "include_abstention": include_abstention,
+    }
+    return "trainpolicy-" + sha256_canonical(payload)[:16]
+
+
+def derive_input_template_id(
+    *,
+    schema_version: int,
+    template_version: int,
+    name: str,
+    instructions: str,
+    candidate_families: tuple[str, ...],
+    task_id: str,
+    feature_policy_id: str,
+) -> str:
+    payload = {
+        "schema_version": schema_version,
+        "template_version": template_version,
+        "name": name,
+        "instructions": instructions,
+        "candidate_families": sorted(candidate_families),
+        "task_id": task_id,
+        "feature_policy_id": feature_policy_id,
+    }
+    return "traintmpl-" + sha256_canonical(payload)[:16]
+
+
+def derive_target_template_id(
+    *,
+    schema_version: int,
+    target_version: int,
+    task_id: str,
+    output_schema: str,
+) -> str:
+    payload = {
+        "schema_version": schema_version,
+        "target_version": target_version,
+        "task_id": task_id,
+        "output_schema": output_schema,
+    }
+    return "traintgt-" + sha256_canonical(payload)[:16]
+
+
+class TrainingInputTemplate(StrictModel):
+    """The frozen, content-addressed training-input contract.
+
+    ``render`` is pure and deterministic over model-visible features ONLY: the
+    exact ordered fields exposed to the model are ``backend``, ``topology_hash``,
+    baseline-evidence presence, and onset-evidence presence — plus the fixed
+    candidate class list and the required output schema. No identity, label,
+    split, digest, or policy id ever enters the rendered text (the
+    ``feature_policy_id`` the template SUPPORTS is template metadata, never
+    prompt text).
+    """
+
+    schema_version: Literal[1] = 1
+    template_version: Literal[1] = 1
+    name: str = Field(min_length=1)
+    instructions: str = Field(min_length=1)
+    candidate_families: tuple[str, ...] = Field(min_length=1)
+    task_id: str = Field(min_length=1)
+    feature_policy_id: str = Field(min_length=1)
+    input_template_id: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _valid(self) -> TrainingInputTemplate:
+        if sorted(self.candidate_families) != list(self.candidate_families):
+            raise ValueError("candidate_families must be sorted")
+        if len(set(self.candidate_families)) != len(self.candidate_families):
+            raise ValueError("candidate_families must be unique")
+        expected = derive_input_template_id(
+            schema_version=self.schema_version, template_version=self.template_version,
+            name=self.name, instructions=self.instructions,
+            candidate_families=self.candidate_families, task_id=self.task_id,
+            feature_policy_id=self.feature_policy_id,
+        )
+        if self.input_template_id != expected:
+            raise ValueError("input_template_id does not match the template content")
+        return self
+
+    def render(self, features: DatasetFeatures) -> str:
+        """Deterministically render the model input from features ONLY."""
+        candidates = ", ".join(self.candidate_families)
+        onset = "present" if features.onset_evidence is not None else "absent"
+        return (
+            f"{self.instructions}\n\n"
+            f"Candidate fault families: {candidates}\n\n"
+            "Observation metadata:\n"
+            f"- backend: {features.backend}\n"
+            f"- topology_hash: {features.topology_hash}\n"
+            f"- baseline_evidence: present\n"
+            f"- onset_evidence: {onset}\n\n"
+            f"Output: {_TARGET_SCHEMA_DESCRIPTION}"
+        )
+
+
+class TrainingTargetTemplate(StrictModel):
+    """The frozen, content-addressed supervised-target contract.
+
+    ``render`` emits strict canonical JSON (sorted keys, no whitespace) so two
+    equivalent labels serialize byte-identically. The target carries ONLY the
+    authoritative fault family and the prediction type — never correctness,
+    confidence, reasoning, outcome category, ranking, recovery data, identity,
+    paths, or digests.
+    """
+
+    schema_version: Literal[1] = 1
+    target_version: Literal[1] = 1
+    task_id: str = Field(min_length=1)
+    output_schema: str = Field(min_length=1)
+    target_template_id: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _valid(self) -> TrainingTargetTemplate:
+        expected = derive_target_template_id(
+            schema_version=self.schema_version, target_version=self.target_version,
+            task_id=self.task_id, output_schema=self.output_schema,
+        )
+        if self.target_template_id != expected:
+            raise ValueError("target_template_id does not match the template content")
+        return self
+
+    def render(self, fault_family: str) -> str:
+        """Canonical JSON target from the authoritative accepted label."""
+        return canonical_json_str(
+            {"prediction_type": "diagnosis", "fault_family": fault_family}
+        )
+
+
+class TrainingDataPolicy(StrictModel):
+    """The frozen, content-addressed training-eligibility contract (Gate 10A).
+
+    Every eligibility-defining field is a ``Literal`` locking the Gate 10A
+    contract: only ``train``-partition, accepted-fault, accepted-diagnosis
+    examples may enter supervised training; validation, test, and abstention are
+    structurally excluded (a policy permitting them cannot be constructed).
+    """
+
+    schema_version: Literal[1] = 1
+    policy_version: Literal[1] = 1
+    allowed_partition: Literal["train"] = "train"
+    allowed_example_kind: Literal["accepted_fault"] = "accepted_fault"
+    allowed_label_kind: Literal["accepted_fault"] = "accepted_fault"
+    include_abstention: Literal[False] = False
+    task_id: str = Field(min_length=1)
+    input_template_id: str = Field(min_length=1)
+    target_template_id: str = Field(min_length=1)
+    training_data_policy_id: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _valid(self) -> TrainingDataPolicy:
+        expected = derive_training_data_policy_id(
+            schema_version=self.schema_version, policy_version=self.policy_version,
+            allowed_partition=self.allowed_partition,
+            allowed_example_kind=self.allowed_example_kind,
+            allowed_label_kind=self.allowed_label_kind, task_id=self.task_id,
+            input_template_id=self.input_template_id,
+            target_template_id=self.target_template_id,
+            include_abstention=self.include_abstention,
+        )
+        if self.training_data_policy_id != expected:
+            raise ValueError("training_data_policy_id does not match the policy")
+        return self
+
+
+def diagnosis_input_template(
+    *,
+    task_id: str,
+    feature_policy_id: str,
+    name: str = "supervised_fault_family_diagnosis",
+    candidate_families: tuple[str, ...] = TRAINING_CANDIDATE_FAMILIES,
+) -> TrainingInputTemplate:
+    families = tuple(sorted(candidate_families))
+    template_id = derive_input_template_id(
+        schema_version=1, template_version=INPUT_TEMPLATE_VERSION, name=name,
+        instructions=_INPUT_INSTRUCTIONS, candidate_families=families,
+        task_id=task_id, feature_policy_id=feature_policy_id,
+    )
+    return TrainingInputTemplate(
+        name=name, instructions=_INPUT_INSTRUCTIONS, candidate_families=families,
+        task_id=task_id, feature_policy_id=feature_policy_id,
+        input_template_id=template_id,
+    )
+
+
+def diagnosis_target_template(*, task_id: str) -> TrainingTargetTemplate:
+    template_id = derive_target_template_id(
+        schema_version=1, target_version=TARGET_TEMPLATE_VERSION, task_id=task_id,
+        output_schema=_TARGET_SCHEMA_DESCRIPTION,
+    )
+    return TrainingTargetTemplate(
+        task_id=task_id, output_schema=_TARGET_SCHEMA_DESCRIPTION,
+        target_template_id=template_id,
+    )
+
+
+def diagnosis_training_policy(
+    *,
+    task_id: str,
+    input_template: TrainingInputTemplate,
+    target_template: TrainingTargetTemplate,
+) -> TrainingDataPolicy:
+    policy_id = derive_training_data_policy_id(
+        schema_version=1, policy_version=TRAINING_POLICY_VERSION,
+        allowed_partition="train", allowed_example_kind="accepted_fault",
+        allowed_label_kind="accepted_fault", task_id=task_id,
+        input_template_id=input_template.input_template_id,
+        target_template_id=target_template.target_template_id,
+        include_abstention=False,
+    )
+    return TrainingDataPolicy(
+        task_id=task_id, input_template_id=input_template.input_template_id,
+        target_template_id=target_template.target_template_id,
+        training_data_policy_id=policy_id,
+    )
