@@ -714,8 +714,11 @@ class HFTrainingEngine:
                 save as st_save,
             )
 
+            # .clone() breaks storage sharing (e.g. tied embeddings):
+            # safetensors refuses shared tensors, and each saved entry must
+            # own its bytes.
             weights = st_save(
-                {k: v.detach().cpu().contiguous()
+                {k: v.detach().cpu().clone().contiguous()
                  for k, v in model.state_dict().items()})
         except Exception as exc:
             raise TrainingEngineError(

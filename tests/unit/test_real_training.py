@@ -186,3 +186,46 @@ def test_events_have_consistency_classes(tmp_path: Path, realtrain_pipeline) -> 
     types = [e.event_type for e in events]
     assert types[0] is RealExecutionEventType.AUTHORIZATION_ACCEPTED
     assert types[-1] is RealExecutionEventType.CHECKPOINT_PRODUCED
+
+
+def test_model_approval_record() -> None:
+    from pydantic import ValidationError
+
+    from verifiednet.training import (
+        ApprovedTrainingModel,
+        build_model_approval,
+    )
+
+    approval = build_model_approval(
+        model_identifier="Qwen/Qwen2.5-0.5B-Instruct",
+        model_revision="7ae557604adf67be50417f59c2c2f167def9a775",
+        tokenizer_identifier="Qwen/Qwen2.5-0.5B-Instruct",
+        tokenizer_revision="7ae557604adf67be50417f59c2c2f167def9a775",
+        architecture_class="Qwen2ForCausalLM",
+        parameter_count=494_032_768,
+        model_artifact_id="modelart-" + "0" * 16,
+        tokenizer_artifact_id="tokart-" + "0" * 16,
+        bounded_model_policy_id="bmodel-" + "0" * 16,
+        license_identifier="apache-2.0",
+        license_review="reviewed: upstream LICENSE declares Apache-2.0")
+    assert approval.approval_id.startswith("modelappr-")
+    assert approval.local_cache_only is True
+    # deterministic + self-validating
+    again = build_model_approval(**{
+        k: getattr(approval, k) for k in (
+            "model_identifier", "model_revision", "tokenizer_identifier",
+            "tokenizer_revision", "architecture_class", "parameter_count",
+            "model_artifact_id", "tokenizer_artifact_id",
+            "bounded_model_policy_id", "license_identifier",
+            "license_review")})
+    assert again == approval
+    dump = approval.model_dump()
+    with pytest.raises(ValidationError):  # mutable revisions never approved
+        ApprovedTrainingModel.model_validate(dump | {"model_revision": "main"})
+    with pytest.raises(ValidationError):  # tampered approval id
+        ApprovedTrainingModel.model_validate(
+            dump | {"approval_id": "modelappr-" + "0" * 16})
+    # no host facts are representable
+    fields = set(ApprovedTrainingModel.model_fields)
+    assert not fields & {"username", "hostname", "cache_path", "timestamp",
+                         "hardware_uuid", "serial_number", "home_directory"}

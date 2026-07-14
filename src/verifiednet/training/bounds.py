@@ -362,3 +362,83 @@ def build_real_execution_policy(
     return RealTrainingExecutionPolicy(
         **fields,  # type: ignore[arg-type]
         real_execution_policy_id=derive_real_execution_policy_id(probe))
+
+
+# ---------------------------------------------------------------------------
+# Project-level approved pretrained model record
+# ---------------------------------------------------------------------------
+
+
+class ApprovedTrainingModel(StrictModel):
+    """The project's explicit approval record for ONE pretrained model.
+
+    Binds the approved identity, the resolved artifact ids, the bounded-model
+    policy, and the reviewed license. Contains NO host facts: no username,
+    home path, absolute cache path, timestamp, hostname, or hardware ids —
+    the absolute location of the local artifact is runtime evidence only and
+    never enters this record.
+    """
+
+    schema_version: Literal[1] = 1
+    approval_version: Literal[1] = 1
+    model_identifier: str = Field(min_length=1)
+    model_revision: str = Field(min_length=1)
+    tokenizer_identifier: str = Field(min_length=1)
+    tokenizer_revision: str = Field(min_length=1)
+    architecture_class: str = Field(min_length=1)
+    parameter_count: int = Field(ge=1)
+    model_artifact_id: str = Field(min_length=1)
+    tokenizer_artifact_id: str = Field(min_length=1)
+    bounded_model_policy_id: str = Field(min_length=1)
+    license_identifier: str = Field(min_length=1)
+    license_review: str = Field(min_length=1)
+    local_cache_only: Literal[True] = True
+    approval_id: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _valid(self) -> ApprovedTrainingModel:
+        for revision in (self.model_revision, self.tokenizer_revision):
+            if revision.strip().lower() in FORBIDDEN_REVISIONS:
+                raise ValueError("mutable revisions are never approved")
+        if self.approval_id != derive_model_approval_id(self):
+            raise ValueError("approval_id does not match the approval record")
+        return self
+
+
+def derive_model_approval_id(approval: ApprovedTrainingModel) -> str:
+    payload = approval.model_dump(mode="json")
+    payload.pop("approval_id", None)
+    return "modelappr-" + sha256_canonical(payload)[:16]
+
+
+def build_model_approval(
+    *,
+    model_identifier: str,
+    model_revision: str,
+    tokenizer_identifier: str,
+    tokenizer_revision: str,
+    architecture_class: str,
+    parameter_count: int,
+    model_artifact_id: str,
+    tokenizer_artifact_id: str,
+    bounded_model_policy_id: str,
+    license_identifier: str,
+    license_review: str,
+) -> ApprovedTrainingModel:
+    fields: dict[str, object] = {
+        "model_identifier": model_identifier,
+        "model_revision": model_revision,
+        "tokenizer_identifier": tokenizer_identifier,
+        "tokenizer_revision": tokenizer_revision,
+        "architecture_class": architecture_class,
+        "parameter_count": parameter_count,
+        "model_artifact_id": model_artifact_id,
+        "tokenizer_artifact_id": tokenizer_artifact_id,
+        "bounded_model_policy_id": bounded_model_policy_id,
+        "license_identifier": license_identifier,
+        "license_review": license_review,
+    }
+    probe = ApprovedTrainingModel.model_construct(**fields)  # type: ignore[arg-type]
+    return ApprovedTrainingModel(
+        **fields,  # type: ignore[arg-type]
+        approval_id=derive_model_approval_id(probe))
