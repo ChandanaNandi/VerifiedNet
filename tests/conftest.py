@@ -582,6 +582,114 @@ def eval_pipeline(separated_pipeline) -> Callable[..., object]:
     return _helper
 
 
+@pytest.fixture
+def plan_pipeline(eval_pipeline) -> Callable[..., object]:
+    """Gate 10B chain: written training corpus + default spec/trainer context.
+
+    ``helper(tmp_path, accepted=[...], rejected=[...])`` returns an object with
+    ``.manifest`` (TrainingCorpusManifest), ``.descriptor``, ``.spec`` (a valid
+    default TrainingSpec bound to the corpus), ``.trainer`` (FakeTrainer),
+    ``.make_spec(**overrides)``, ``.corpus_root``, and the upstream roots.
+    """
+    from dataclasses import dataclass as _dc
+
+    from verifiednet.evaluation import diagnosis_task
+    from verifiednet.training import (
+        FAKE_TRAINER_IMPLEMENTATION_ID,
+        BatchConfig,
+        EpochBudget,
+        FakeTrainer,
+        OptimizationConfig,
+        SchedulerConfig,
+        SeedPolicy,
+        SequenceLengthPolicy,
+        TokenizerSpec,
+        TrainableModelSpec,
+        build_training_corpus,
+        build_training_spec,
+        derive_model_spec_id,
+        derive_tokenizer_spec_id,
+        descriptor_from_manifest,
+        diagnosis_input_template,
+        diagnosis_target_template,
+        diagnosis_training_policy,
+        load_training_corpus,
+        write_training_corpus,
+    )
+
+    def _model() -> TrainableModelSpec:
+        return TrainableModelSpec(
+            provider="fake", model_identifier="fake/tiny-slm",
+            model_revision="a" * 40, model_class="FakeCausalLM",
+            model_spec_id=derive_model_spec_id(
+                provider="fake", model_identifier="fake/tiny-slm",
+                model_revision="a" * 40, model_class="FakeCausalLM",
+                load_precision="float32"))
+
+    def _tokenizer() -> TokenizerSpec:
+        return TokenizerSpec(
+            tokenizer_identifier="fake/tiny-slm", tokenizer_revision="a" * 40,
+            tokenizer_class="FakeTokenizer",
+            tokenizer_spec_id=derive_tokenizer_spec_id(
+                tokenizer_identifier="fake/tiny-slm", tokenizer_revision="a" * 40,
+                tokenizer_class="FakeTokenizer",
+                special_vocab_policy="model_defaults", padding_policy="right",
+                truncation_policy="fail_closed"))
+
+    @_dc(frozen=True)
+    class _P:
+        manifest: object
+        descriptor: object
+        spec: object
+        trainer: object
+        make_spec: object
+        corpus_root: object
+        run_root: object
+        dataset_dir: object
+        prepared_dir: object
+
+    def _helper(tmp_path, *, accepted, rejected=()):
+        ctx = eval_pipeline(tmp_path, accepted=accepted, rejected=rejected)
+        task_id = diagnosis_task().task_id
+        fp = ctx.loaded.manifest.feature_policy_id
+        itpl = diagnosis_input_template(task_id=task_id, feature_policy_id=fp)
+        ttpl = diagnosis_target_template(task_id=task_id)
+        policy = diagnosis_training_policy(task_id=task_id, input_template=itpl,
+                                           target_template=ttpl)
+        corpus = build_training_corpus(ctx.loaded, training_data_policy=policy,
+                                       input_template=itpl, target_template=ttpl)
+        written = write_training_corpus(corpus, tmp_path / "training-corpora")
+        manifest = load_training_corpus(written.root).manifest
+
+        def make_spec(**overrides):
+            fields = dict(
+                training_corpus_id=manifest.training_corpus_id,
+                training_corpus_digest=manifest.training_corpus_digest,
+                task_id=task_id, model=_model(), tokenizer=_tokenizer(),
+                trainer_implementation_id=FAKE_TRAINER_IMPLEMENTATION_ID,
+                sequence_policy=SequenceLengthPolicy(
+                    max_input_tokens=512, max_target_tokens=64, max_total_tokens=576),
+                batch=BatchConfig(per_device_batch_size=2,
+                                  gradient_accumulation_steps=2,
+                                  effective_batch_size=4),
+                optimization=OptimizationConfig(optimizer_name="adamw",
+                                                learning_rate="1e-4"),
+                scheduler=SchedulerConfig(scheduler_name="linear_warmup",
+                                          warmup_steps=1),
+                budget=EpochBudget(epochs=3),
+                seed_policy=SeedPolicy(data_order_seed=1, model_init_seed=2,
+                                       dropout_seed=3, backend_seed=4))
+            fields.update(overrides)
+            return build_training_spec(**fields)
+
+        return _P(manifest=manifest, descriptor=descriptor_from_manifest(manifest),
+                  spec=make_spec(), trainer=FakeTrainer(), make_spec=make_spec,
+                  corpus_root=written.root, run_root=ctx.run_root,
+                  dataset_dir=ctx.dataset_dir, prepared_dir=ctx.prepared_dir)
+
+    return _helper
+
+
 # --------------------------------------------------------------------------
 # Gate 5.2: deterministic neighbor-removal lab sim + builder, shared by the
 # unit and failure tiers (tests/ is not a package; shared helpers live here).

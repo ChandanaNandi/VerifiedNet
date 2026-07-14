@@ -29,6 +29,11 @@ implementation is deferred to the mapped future gates — see
 | 0016 | Canonical per-run artifact directory: durability + integrity contract | Accepted |
 | 0017 | Gate 4 composition root and run index | Accepted |
 | 0018 | Datasets are derived from verified runs; the run library is authoritative | Accepted |
+| 0019 | Evaluation is deterministic and model-free | Accepted |
+| 0020 | Models participate only behind the feature-only predictor boundary | Accepted |
+| 0021 | Benchmarking compares predictors without changing evaluation | Accepted |
+| 0022 | Training data is train-only, evaluation-isolated, and derived | Accepted |
+| 0023 | Training runs are planned, content-addressed, and verified before any execution exists | Accepted |
 
 Format for each record: **Status**, **Context**, **Decision**, **Consequences**,
 **References** (to the gate document or source that motivated it).

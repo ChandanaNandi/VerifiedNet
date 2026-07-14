@@ -109,8 +109,20 @@ canonical JSON from the authoritative label; audit metadata stays separate; the
 trainer-facing loader returns only input/target pairs; partition isolation is
 proven by test; and the training package may not import evaluation or any
 model-training library (AST-enforced). **No model training occurs in Gate 10A.**
-See `architecture/gate10/training-corpus.md`. Layers beyond are **planned, not
-implemented** — no training runner, fine-tuning, prompt optimization, RAG,
+See `architecture/gate10/training-corpus.md`.
+Gate 10B (reproducible training specification and trainer abstraction) is
+implemented with ADR-0023: every weight-affecting input is explicit and
+content-addressed in a `TrainingSpec` (immutable model/tokenizer revisions,
+canonical decimal hyperparameters, full seed policy, validated batch shape,
+train-corpus binding by id and digest); a `Trainer` protocol whose
+authoritative operation is `plan` (there is no `train()`); fail-closed
+capability negotiation; a `TrainingPlan` with exact integer batch/step
+arithmetic and honest determinism claims; a `FakeTrainer` proving the
+machinery offline; and immutable, verified `training-plans/<id>/` artifacts.
+**No fine-tuning occurs in Gate 10B** — no ML framework is imported
+(AST-enforced and import-trapped). See `architecture/gate10/training-plan.md`.
+Layers beyond are **planned, not
+implemented** — no training execution, fine-tuning, prompt optimization, RAG,
 GraphRAG, agent, memory, or persistent workflow exists yet. The deterministic
 trust core (labs →
 faults → evidence → verification → oracle → incidents → recovery → artifacts → index) is

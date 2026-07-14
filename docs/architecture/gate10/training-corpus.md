@@ -151,7 +151,9 @@ the training package imports no evaluation or model-training modules
 
 The v1 train partition is tiny, so this corpus proves the MACHINERY —
 eligibility, separation, identity, isolation — not a useful training set.
-Gate 10B will add the reproducible training specification and trainer
-abstraction (still no fine-tuning execution), consuming this corpus exclusively
-through `load_training_pairs`. Checkpoints and actual fine-tuning come later,
-behind their own gates.
+Gate 10B (implemented — see `training-plan.md`, ADR-0023) adds the reproducible
+training specification and trainer abstraction, still with no fine-tuning
+execution: planning binds this corpus by id and digest through a descriptor
+(count and identity only — never example text); a future execution gate will
+consume the examples themselves exclusively through `load_training_pairs`.
+Checkpoints and actual fine-tuning come later, behind their own gates.
