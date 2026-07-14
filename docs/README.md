@@ -90,8 +90,18 @@ prediction (malformed output becomes an explicit invalid prediction, never an
 exception). Offline CI stays completely model-free via a deterministic fake backend;
 a real local Ollama backend is exercised only by an optional integration test. The
 evaluation engine, records, metrics, and digests are unchanged. See
-`architecture/gate8/slm-predictor.md`. Layers beyond are **planned, not
-implemented** — no multi-model benchmarking, fine-tuning, RAG, GraphRAG, agent,
-memory, or persistent workflow exists yet. The deterministic trust core (labs →
+`architecture/gate8/slm-predictor.md`.
+Gate 9 (multi-predictor benchmark framework) is implemented with ADR-0021: a
+deterministic predictor registry, an order-independent content-addressed
+`BenchmarkSpec`, a pure `run_benchmark` that evaluates every predictor under
+identical conditions through the unchanged Gate 7 engine, deterministic
+comparison metrics and a fully tie-broken ranking, and immutable benchmark
+artifacts (`benchmarks/<id>/manifest+comparison+ranking`) with a self-validating
+`benchmark_digest` and a verifier that recomputes ranking-from-comparison. The
+benchmark compares predictors and never changes evaluation; predictors still
+receive only features. See `architecture/gate9/benchmark-framework.md`. Layers
+beyond are **planned, not implemented** — no prompt optimization, fine-tuning,
+RAG, GraphRAG, agent, memory, or persistent workflow exists yet. The
+deterministic trust core (labs →
 faults → evidence → verification → oracle → incidents → recovery → artifacts → index) is
 fixed and is never replaced by a model. See `architecture/gate3/limitations.md`.
