@@ -11,6 +11,16 @@ dependencies = [
     "pydantic>=2.7,<3",
 ]
 
+[project.optional-dependencies]
+# Gate 10F: the OPTIONAL real-training group. Core imports never require it;
+# all consumption is lazy inside verifiednet/training/hfexecutor.py, and the
+# offline suite runs fully without it.
+training-hf = [
+    "torch>=2.2,<3",
+    "transformers>=4.40,<5",
+    "safetensors>=0.4,<1",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",

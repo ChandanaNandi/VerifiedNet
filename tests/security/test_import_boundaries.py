@@ -34,6 +34,14 @@ VIOLATION_FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "securit
 
 SUBPROCESS_ALLOWED = {SRC / "runtime" / "process.py"}
 
+#: Gate 10F: the ONE sanctioned lazy-ML-import site. Only this file may
+#: reference torch/transformers, and test_hfexecutor_ml_imports_are_lazy
+#: separately proves every such import is function-level (lazy) — the module
+#: itself imports cleanly without the training-hf extras installed.
+ML_LAZY_ALLOWED = {SRC / "training" / "hfexecutor.py"}
+ML_LAZY_MODULES = ("torch", "transformers", "peft", "bitsandbytes",
+                   "accelerate", "safetensors")
+
 #: The composition root. Every other package is "below" it and must not import
 #: it; only the orchestrator package itself (and test/tooling code outside src)
 #: may reference ``verifiednet.orchestrator``.
@@ -179,6 +187,9 @@ def scan_file(path: Path, package: str | None) -> list[Violation]:
         if package and package in FORBIDDEN_IMPORTS:
             for banned in FORBIDDEN_IMPORTS[package]:
                 if module == banned or module.startswith(banned + "."):
+                    if (path in ML_LAZY_ALLOWED
+                            and banned.split(".")[0] in ML_LAZY_MODULES):
+                        continue  # the sanctioned lazy-ML site (see above)
                     violations.append(
                         Violation(str(path), lineno, f"{package}-forbidden-import", module)
                     )
@@ -479,3 +490,23 @@ def test_guard_detects_incidents_runtime_import_fixture() -> None:
 def test_guard_accepts_clean_fixture() -> None:
     path = VIOLATION_FIXTURES / "clean_module.py"
     assert scan_file(path, "collectors") == []
+
+
+def test_hfexecutor_ml_imports_are_lazy() -> None:
+    """The sanctioned lazy-ML site may import torch/transformers/safetensors
+    ONLY inside function bodies — never at module level, so importing the
+    module (and the package) succeeds without the training-hf extras."""
+    path = SRC / "training" / "hfexecutor.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    module_level: list[str] = []
+    for node in tree.body:  # module level ONLY
+        if isinstance(node, ast.Import):
+            module_level.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            module_level.append(node.module)
+    for name in module_level:
+        assert name.split(".")[0] not in ML_LAZY_MODULES, name
+    # and the lazy imports genuinely exist somewhere in the file (the
+    # exemption is used, not dormant)
+    all_imports = {m.split(".")[0] for m, _ in _module_imports(tree)}
+    assert "torch" in all_imports and "transformers" in all_imports

@@ -163,9 +163,25 @@ recomputed, never trusted. **No real training, model loading, or checkpoint
 occurs in Gate 10E**; heavy ML libraries are not dependencies, and their
 absence is a structured finding. See
 `architecture/gate10/execution-preflight.md`.
+Gate 10F (first bounded real training execution) is implemented with
+ADR-0027: real weight mutation is reachable only through a verified,
+revalidated authorization plus four content-addressed bounded policies
+(approved model, deterministic first-N corpus slice, exact causal-LM
+objective with label masking, Literal-locked runtime ceilings); real
+executions are STRUCTURALLY verified (bindings, ordering, monotone counts,
+digests) with explicit consistency classes and can never claim replay
+determinism or model quality; the first genuine checkpoint format
+(`verifiednet.real-checkpoint-v1`, full-model safetensors validated by
+dependency-free structural parsing) publishes only from a verified COMPLETED
+execution with complete lineage and no parent; heavy ML lives in the optional
+`training-hf` extras behind one sanctioned lazy-import module, the offline
+suite runs a deterministic stub end-to-end, and genuine weight mutation is a
+double-gated optional integration test. **No evaluation, benchmarking, or
+quality claim of the trained checkpoint exists.** See
+`architecture/gate10/real-training.md`.
 Layers beyond are **planned, not
-implemented** — no real training execution, real checkpoint formats,
-checkpoint-backed prediction, prompt optimization, RAG,
+implemented** — no checkpoint-backed prediction, trained-model evaluation or
+benchmark integration, prompt optimization, RAG,
 GraphRAG, agent, memory, or persistent workflow exists yet. The deterministic
 trust core (labs →
 faults → evidence → verification → oracle → incidents → recovery → artifacts → index) is

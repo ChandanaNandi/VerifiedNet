@@ -162,7 +162,10 @@ inherit silently. Checkpoint artifact CONTRACTS now exist (Gate 10D,
 implemented — see `checkpoint-artifact.md`, ADR-0025): a verified COMPLETED
 execution is the only legal checkpoint source, and the fake producer binds its
 lineage to this gate's execution artifacts. The real trainer-backend
-contract and preflight exist too (Gate 10E — see `execution-preflight.md`,
-ADR-0026), still without any execution. Real weights still do not exist.
+contract and preflight exist (Gate 10E, ADR-0026), and Gate 10F (see
+`real-training.md`, ADR-0027) performed the first bounded REAL execution —
+under a separate structural consistency discipline that deliberately does
+NOT inherit this gate's replay guarantee. This simulator remains the core
+suite's engine.
 Wall-clock time is deliberately absent and stays absent until an execution
 layer genuinely needs it.

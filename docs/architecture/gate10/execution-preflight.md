@@ -205,7 +205,8 @@ secrets.
 Real training execution, gradients, weight mutation, real checkpoints,
 checkpoint-backed prediction, benchmark integration of trained models, the
 torch-backed environment probe and local-cache resolvers, distributed
-training, warm starts, adapter modes. The next boundary is a deliberately
-small **Gate 10F: first bounded real training execution** — a tiny approved
-model and corpus slice, consuming a verified authorization, before any full
-project fine-tune is attempted.
+training, warm starts, adapter modes. Gate 10F (implemented — see
+`real-training.md`, ADR-0027) is that boundary: the bounded first real run
+consumes a verified authorization, revalidated at the moment of use, and the
+torch-backed probe (`TorchTrainingEnvironmentProbe`) plus the local-cache
+resolvers deferred here now exist.

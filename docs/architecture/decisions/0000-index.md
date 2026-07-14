@@ -37,6 +37,7 @@ implementation is deferred to the mapped future gates — see
 | 0024 | Training execution is event-sourced, deterministic, and simulated before it is real | Accepted |
 | 0025 | Checkpoints are verified artifacts with bound lineage, never trusted candidates | Accepted |
 | 0026 | Training intent is immutable; execution authorization is environmental evidence | Accepted |
+| 0027 | Real executions are structurally verified, never replay-reconstructed; checkpoints require verified authorization + completed execution | Accepted |
 
 Format for each record: **Status**, **Context**, **Decision**, **Consequences**,
 **References** (to the gate document or source that motivated it).
