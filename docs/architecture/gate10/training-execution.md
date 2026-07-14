@@ -161,6 +161,8 @@ skeletons) — that relaxation is a future design decision, not something to
 inherit silently. Checkpoint artifact CONTRACTS now exist (Gate 10D,
 implemented — see `checkpoint-artifact.md`, ADR-0025): a verified COMPLETED
 execution is the only legal checkpoint source, and the fake producer binds its
-lineage to this gate's execution artifacts. Real weights still do not exist.
+lineage to this gate's execution artifacts. The real trainer-backend
+contract and preflight exist too (Gate 10E — see `execution-preflight.md`,
+ADR-0026), still without any execution. Real weights still do not exist.
 Wall-clock time is deliberately absent and stays absent until an execution
 layer genuinely needs it.

@@ -166,6 +166,8 @@ and the AST import boundary covers the three new modules.
 
 A real checkpoint format, real weights, checkpoint-backed prediction,
 warm-start/adapter lineage, checkpoint conversion/merging/upload, and any ML
-framework integration. Gate 10E introduces the real trainer-backend CONTRACT
-(and execution preflight) behind these proven interfaces; real fine-tuning
-comes only after that, as its own explicitly versioned format.
+framework integration. Gate 10E (implemented — see
+`execution-preflight.md`, ADR-0026) introduces the real trainer-backend
+contract and execution preflight behind these proven interfaces; real
+fine-tuning comes only with Gate 10F, and a real checkpoint arrives as its
+own explicitly versioned NEW format spec.

@@ -147,9 +147,25 @@ config/tokenizer JSON); layered simulation honesty (Literal-locked kind,
 not-real-loadable compatibility, no model-loading API); and fail-closed
 verification with an independent lineage audit. **No real model checkpoint
 exists in Gate 10D.** See `architecture/gate10/checkpoint-artifact.md`.
+Gate 10E (real trainer-backend contract and execution preflight) is
+implemented with ADR-0026: immutable training intent (Gate 10B) is strictly
+separated from runtime environment evidence — a content-addressed
+`RealTrainerBackendSpec` (single-device HF full fine-tuning, the only modeled
+mode), a secret-free `TrainingEnvironmentSnapshot` (PEP 440 package records
+via importlib.metadata, device capability, deterministic-mode support),
+separate immutable model/tokenizer resolution (pinned revisions + content
+hashes; mutable aliases unrepresentable), a 12-stage structured preflight
+(plan/corpus/backend/packages/device/resolution/precision/memory/determinism/
+checkpoint/authorization; skips visible, never hidden), honest determinism
+categories with explicit best-effort acknowledgement, and an immutable
+verified `training-authorizations/<id>/` artifact whose validity is
+recomputed, never trusted. **No real training, model loading, or checkpoint
+occurs in Gate 10E**; heavy ML libraries are not dependencies, and their
+absence is a structured finding. See
+`architecture/gate10/execution-preflight.md`.
 Layers beyond are **planned, not
-implemented** — no real checkpoint formats, real fine-tuning, checkpoint-backed
-prediction, prompt optimization, RAG,
+implemented** — no real training execution, real checkpoint formats,
+checkpoint-backed prediction, prompt optimization, RAG,
 GraphRAG, agent, memory, or persistent workflow exists yet. The deterministic
 trust core (labs →
 faults → evidence → verification → oracle → incidents → recovery → artifacts → index) is

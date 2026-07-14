@@ -784,6 +784,92 @@ def checkpoint_pipeline(execution_pipeline) -> Callable[..., object]:
     return _helper
 
 
+@pytest.fixture
+def preflight_pipeline(plan_pipeline) -> Callable[..., object]:
+    """Gate 10E chain: a REAL-backend-bound plan + fake probe/resolvers.
+
+    ``helper(tmp_path, accepted=[...], rejected=[...])`` returns an object with
+    ``.plan_dir`` (a persisted plan whose trainer implementation is the HF
+    full-finetune backend), ``.corpus_root``, ``.backend`` (adapter over a
+    deterministic FakeEnvironmentProbe), ``.model_resolver`` /
+    ``.tokenizer_resolver`` (fake, cached), ``.make_backend(probe)``,
+    ``.make_hf_spec(**overrides)``, ``.hf_spec``, and ``.planctx``.
+    """
+    from dataclasses import dataclass as _dc
+
+    from verifiednet.training import (
+        HF_FULL_FINETUNE_BACKEND_ID,
+        FakeEnvironmentProbe,
+        FakeModelArtifactResolver,
+        FakeTokenizerArtifactResolver,
+        HuggingFaceFullFinetuneBackend,
+        TokenizerSpec,
+        TrainableModelSpec,
+        derive_model_spec_id,
+        derive_tokenizer_spec_id,
+        plan_for_real_backend,
+        write_training_plan,
+    )
+
+    def _hf_model() -> TrainableModelSpec:
+        fields = dict(provider="huggingface",
+                      model_identifier="verifiednet-test/tiny-slm",
+                      model_revision="b" * 40,
+                      model_class="AutoModelForCausalLM")
+        return TrainableModelSpec(
+            **fields,
+            model_spec_id=derive_model_spec_id(load_precision="float32",
+                                               **fields))
+
+    def _hf_tokenizer() -> TokenizerSpec:
+        fields = dict(tokenizer_identifier="verifiednet-test/tiny-slm",
+                      tokenizer_revision="b" * 40,
+                      tokenizer_class="AutoTokenizer")
+        return TokenizerSpec(
+            **fields,
+            tokenizer_spec_id=derive_tokenizer_spec_id(
+                special_vocab_policy="model_defaults", padding_policy="right",
+                truncation_policy="fail_closed", **fields))
+
+    @_dc(frozen=True)
+    class _F:
+        plan_dir: object
+        corpus_root: object
+        backend: object
+        model_resolver: object
+        tokenizer_resolver: object
+        make_backend: object
+        make_hf_spec: object
+        hf_spec: object
+        planctx: object
+
+    def _helper(tmp_path, *, accepted, rejected=()):
+        ctx = plan_pipeline(tmp_path, accepted=accepted, rejected=rejected)
+
+        def make_hf_spec(**overrides):
+            fields = dict(model=_hf_model(), tokenizer=_hf_tokenizer(),
+                          trainer_implementation_id=HF_FULL_FINETUNE_BACKEND_ID)
+            fields.update(overrides)
+            return ctx.make_spec(**fields)
+
+        hf_spec = make_hf_spec()
+        plan = plan_for_real_backend(spec=hf_spec, corpus=ctx.descriptor)
+        written_plan = write_training_plan(plan, tmp_path / "hf-plans")
+
+        def make_backend(probe=None):
+            return HuggingFaceFullFinetuneBackend(
+                probe if probe is not None else FakeEnvironmentProbe())
+
+        return _F(plan_dir=written_plan.root, corpus_root=ctx.corpus_root,
+                  backend=make_backend(),
+                  model_resolver=FakeModelArtifactResolver(),
+                  tokenizer_resolver=FakeTokenizerArtifactResolver(),
+                  make_backend=make_backend, make_hf_spec=make_hf_spec,
+                  hf_spec=hf_spec, planctx=ctx)
+
+    return _helper
+
+
 # --------------------------------------------------------------------------
 # Gate 5.2: deterministic neighbor-removal lab sim + builder, shared by the
 # unit and failure tiers (tests/ is not a package; shared helpers live here).
