@@ -175,6 +175,8 @@ orchestration, not learning. World size is locked to 1; adapters, quantized
 loading, distributed shapes, and checkpoints are all later gates. Gate 10C
 (implemented — see `training-execution.md`, ADR-0024) consumes a verified plan
 and adds execution ORCHESTRATION, still simulation-only: states, events,
-resume, retry, and replay verification. Checkpoint contracts (Gate 10D) and
-the first real trainer backend (Gate 10E) follow behind it — every
-configuration decision has already been made, hashed, and persisted here.
+resume, retry, and replay verification. Checkpoint contracts (Gate 10D,
+implemented — see `checkpoint-artifact.md`, ADR-0025) define what a trained
+checkpoint is, with fake payloads only. The first real trainer backend
+(Gate 10E) follows behind them — every configuration decision has already
+been made, hashed, and persisted here.

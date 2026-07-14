@@ -135,8 +135,21 @@ executions persist as immutable verified `training-executions/<id>/`
 artifacts. **Execution is simulation-only in Gate 10C** — Literal-locked
 `simulated=True`, fake engine only, no ML framework imported. See
 `architecture/gate10/training-execution.md`.
+Gate 10D (immutable checkpoint artifact and lineage contract) is implemented
+with ADR-0025: untrusted `CheckpointCandidate` (content, no hashes) versus
+verified persisted checkpoint (self-validating manifest, recomputed hashes);
+two-layer identity (logical `checkpoint_id` over format+lineage+roles, content
+`checkpoint_digest` over verified bytes); lineage binding execution/plan/spec/
+corpus/model/tokenizer/capability/policy/retry with parent checkpoints
+structurally forbidden; eligibility only from a VERIFIED completed execution;
+a deterministic fake producer (magic-prefixed `.fakebin`, metadata-only
+config/tokenizer JSON); layered simulation honesty (Literal-locked kind,
+not-real-loadable compatibility, no model-loading API); and fail-closed
+verification with an independent lineage audit. **No real model checkpoint
+exists in Gate 10D.** See `architecture/gate10/checkpoint-artifact.md`.
 Layers beyond are **planned, not
-implemented** — no checkpoint artifacts, real fine-tuning, prompt optimization, RAG,
+implemented** — no real checkpoint formats, real fine-tuning, checkpoint-backed
+prediction, prompt optimization, RAG,
 GraphRAG, agent, memory, or persistent workflow exists yet. The deterministic
 trust core (labs →
 faults → evidence → verification → oracle → incidents → recovery → artifacts → index) is

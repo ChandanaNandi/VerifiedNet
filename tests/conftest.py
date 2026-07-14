@@ -729,6 +729,61 @@ def execution_pipeline(plan_pipeline) -> Callable[..., object]:
     return _helper
 
 
+@pytest.fixture
+def checkpoint_pipeline(execution_pipeline) -> Callable[..., object]:
+    """Gate 10D chain: persisted plan + persisted completed execution +
+    checkpoint format spec / production policy / fake producer.
+
+    ``helper(tmp_path, accepted=[...], rejected=[...])`` returns an object with
+    ``.plan_dir``, ``.exec_dir`` (a verified COMPLETED execution),
+    ``.format_spec``, ``.production_policy``, ``.producer``,
+    ``.run_execution(**script)`` (persist another execution of the same plan
+    under a fresh subdirectory; returns its directory), and ``.execctx``.
+    """
+    from dataclasses import dataclass as _dc
+
+    from verifiednet.training import (
+        FakeCheckpointProducer,
+        build_default_checkpoint_production_policy,
+        build_fake_checkpoint_format_spec,
+        write_training_execution,
+        write_training_plan,
+    )
+
+    @_dc(frozen=True)
+    class _C:
+        plan_dir: object
+        exec_dir: object
+        format_spec: object
+        production_policy: object
+        producer: object
+        run_execution: object
+        execctx: object
+
+    def _helper(tmp_path, *, accepted, rejected=()):
+        ctx = execution_pipeline(tmp_path, accepted=accepted, rejected=rejected)
+        written_plan = write_training_plan(ctx.plan, tmp_path / "training-plans")
+        completed = ctx.engine.execute(ctx.plan, policy=ctx.policy)
+        written_exec = write_training_execution(
+            completed, tmp_path / "training-executions")
+        counter = {"n": 0}
+
+        def run_execution(**script):
+            counter["n"] += 1
+            ex = ctx.engine.execute(ctx.plan, policy=ctx.policy, **script)
+            w = write_training_execution(
+                ex, tmp_path / f"training-executions-{counter['n']}")
+            return w.root
+
+        return _C(plan_dir=written_plan.root, exec_dir=written_exec.root,
+                  format_spec=build_fake_checkpoint_format_spec(),
+                  production_policy=build_default_checkpoint_production_policy(),
+                  producer=FakeCheckpointProducer(),
+                  run_execution=run_execution, execctx=ctx)
+
+    return _helper
+
+
 # --------------------------------------------------------------------------
 # Gate 5.2: deterministic neighbor-removal lab sim + builder, shared by the
 # unit and failure tiers (tests/ is not a package; shared helpers live here).

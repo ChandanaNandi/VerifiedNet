@@ -35,6 +35,7 @@ implementation is deferred to the mapped future gates — see
 | 0022 | Training data is train-only, evaluation-isolated, and derived | Accepted |
 | 0023 | Training runs are planned, content-addressed, and verified before any execution exists | Accepted |
 | 0024 | Training execution is event-sourced, deterministic, and simulated before it is real | Accepted |
+| 0025 | Checkpoints are verified artifacts with bound lineage, never trusted candidates | Accepted |
 
 Format for each record: **Status**, **Context**, **Decision**, **Consequences**,
 **References** (to the gate document or source that motivated it).

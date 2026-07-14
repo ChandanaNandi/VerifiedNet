@@ -158,6 +158,9 @@ valid precisely BECAUSE the engine claims `deterministic`; a real backend
 (Gate 10E) will produce genuinely nondeterministic progress and will need an
 explicit, relaxed consistency discipline (recorded claims, not replayed
 skeletons) — that relaxation is a future design decision, not something to
-inherit silently. Checkpoint artifacts do not exist yet; they are Gate 10D's
-contract. Wall-clock time is deliberately absent and stays absent until an
-execution layer genuinely needs it.
+inherit silently. Checkpoint artifact CONTRACTS now exist (Gate 10D,
+implemented — see `checkpoint-artifact.md`, ADR-0025): a verified COMPLETED
+execution is the only legal checkpoint source, and the fake producer binds its
+lineage to this gate's execution artifacts. Real weights still do not exist.
+Wall-clock time is deliberately absent and stays absent until an execution
+layer genuinely needs it.

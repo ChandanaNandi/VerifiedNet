@@ -103,15 +103,17 @@ def test_events_are_reordering_and_dropping_proof(
     ex = ctx.engine.execute(ctx.plan, policy=ctx.policy)
     dump = ex.model_dump()
     events = dump["events"]
-    swapped = [events[0], events[2], events[1], *events[3:]]
+    # (tuples, not lists: strict mode would reject a bare list before the
+    # chain/replay validators run, which would pass this test vacuously)
+    swapped = (events[0], events[2], events[1], *events[3:])
     with pytest.raises(ValidationError):  # reordered log breaks the chain
         TrainingExecution.model_validate(dump | {"events": swapped})
     with pytest.raises(ValidationError):  # dropped event breaks the replay
         TrainingExecution.model_validate(
-            dump | {"events": [events[0], *events[2:]]})
+            dump | {"events": (events[0], *events[2:])})
     with pytest.raises(ValidationError):  # duplicated event breaks sequencing
         TrainingExecution.model_validate(
-            dump | {"events": [events[0], events[0], *events[1:]]})
+            dump | {"events": (events[0], events[0], *events[1:])})
 
 
 def test_final_state_must_be_final(tmp_path: Path, execution_pipeline) -> None:
