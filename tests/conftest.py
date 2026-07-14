@@ -993,6 +993,56 @@ def realtrain_pipeline(preflight_pipeline) -> Callable[..., object]:
     return _helper
 
 
+@pytest.fixture
+def ckpt_predictor_pipeline(realtrain_pipeline) -> Callable[..., object]:
+    """Gate 11 chain: a stub-produced GENUINE real checkpoint + verified bundle.
+
+    ``helper(tmp_path, accepted=[...], rejected=[...])`` executes the offline
+    stub training pipeline to produce a real-format checkpoint, then builds the
+    Gate 11 inference compatibility (scoped to the stub architecture), the CPU
+    device policy, and a fail-closed verified bundle. Returns an object with
+    ``.checkpoint_dir``, ``.compatibility``, ``.device_policy``, ``.bundle``,
+    ``.task``, ``.template``, and ``.trainctx``. Entirely offline: no ML
+    library, no network, no real model.
+    """
+    from dataclasses import dataclass as _dc
+
+    from verifiednet.evaluation import (
+        build_checkpoint_inference_compatibility,
+        build_cpu_inference_device_policy,
+        diagnosis_prompt_template,
+        diagnosis_task,
+        load_verified_checkpoint_bundle,
+    )
+
+    @_dc(frozen=True)
+    class _C:
+        checkpoint_dir: object
+        compatibility: object
+        device_policy: object
+        bundle: object
+        task: object
+        template: object
+        trainctx: object
+
+    def _helper(tmp_path, *, accepted, rejected=()):
+        ctx = realtrain_pipeline(tmp_path, accepted=accepted, rejected=rejected)
+        written = ctx.execute()
+        checkpoint_dir = (
+            ctx.output_root / "real-checkpoints" / written.checkpoint_id)
+        compatibility = build_checkpoint_inference_compatibility(
+            supported_architectures=("AutoModelForCausalLM",))
+        device_policy = build_cpu_inference_device_policy()
+        bundle = load_verified_checkpoint_bundle(
+            checkpoint_dir, compatibility=compatibility)
+        return _C(checkpoint_dir=checkpoint_dir, compatibility=compatibility,
+                  device_policy=device_policy, bundle=bundle,
+                  task=diagnosis_task(), template=diagnosis_prompt_template(),
+                  trainctx=ctx)
+
+    return _helper
+
+
 # --------------------------------------------------------------------------
 # Gate 5.2: deterministic neighbor-removal lab sim + builder, shared by the
 # unit and failure tiers (tests/ is not a package; shared helpers live here).

@@ -4,9 +4,12 @@ The evaluation engine is the one legitimate downstream CONSUMER of the read-only
 dataset engine (Gate 6). It loads the prepared corpus, passes ONLY model-visible
 ``DatasetFeatures`` to a deterministic baseline, compares predictions to labels in
 evaluator-only code, and writes an immutable, content-addressed evaluation result.
-It never trains, never invokes a model/LLM/embedding, never executes a process,
-and never mutates an earlier stage (verified runs → projection → splitting →
-export → separation → baseline prediction → evaluation → immutable results).
+It never trains, never executes a process, and never mutates an earlier stage
+(verified runs → projection → splitting → export → separation → baseline
+prediction → evaluation → immutable results). Models participate ONLY behind the
+feature-only predictor boundary (Gate 8, ADR-0020); checkpoint-backed predictors
+additionally load weights ONLY from a verified immutable real checkpoint
+(Gate 11, ADR-0028) — the deterministic truth chain itself stays model-free.
 """
 
 from verifiednet.evaluation.baseline import (
@@ -37,6 +40,24 @@ from verifiednet.evaluation.benchmark import (
     verify_benchmark,
     write_benchmark,
 )
+from verifiednet.evaluation.checkpointpred import (
+    CHECKPOINT_PREDICTOR_VERSION,
+    HF_LOCAL_BACKEND_FAMILY,
+    CheckpointEligibilityResult,
+    CheckpointInferenceCompatibility,
+    CheckpointInferenceDevicePolicy,
+    CheckpointPredictionError,
+    CheckpointPredictorSpec,
+    VerifiedCheckpointBundle,
+    VerifiedCheckpointPredictor,
+    assess_checkpoint_prediction_eligibility,
+    build_checkpoint_inference_compatibility,
+    build_cpu_inference_device_policy,
+    derive_checkpoint_predictor_id,
+    derive_inference_compatibility_id,
+    derive_inference_device_policy_id,
+    load_verified_checkpoint_bundle,
+)
 from verifiednet.evaluation.contract import (
     AcceptedTargetType,
     EvaluationTask,
@@ -55,6 +76,10 @@ from verifiednet.evaluation.engine import (
     compute_confusion,
     derive_evaluation_id,
     evaluate_prepared_corpus,
+)
+from verifiednet.evaluation.hfinference import (
+    HF_CHECKPOINT_BACKEND_ID,
+    HfCheckpointInferenceBackend,
 )
 from verifiednet.evaluation.inference import (
     BackendUnavailableError,
@@ -104,7 +129,9 @@ from verifiednet.evaluation.scoring import (
 from verifiednet.evaluation.slm import (
     PredictorSpec,
     SlmPredictor,
+    build_backend_invalid_prediction,
     derive_predictor_id,
+    parse_backend_response,
 )
 from verifiednet.evaluation.store import (
     EXPECTED_EVALUATION_FILES,
@@ -122,9 +149,12 @@ from verifiednet.evaluation.store import (
 
 __all__ = [
     "ABSTAIN_LABEL",
+    "CHECKPOINT_PREDICTOR_VERSION",
     "DEFAULT_CANDIDATE_FAMILIES",
     "EXPECTED_BENCHMARK_FILES",
     "EXPECTED_EVALUATION_FILES",
+    "HF_CHECKPOINT_BACKEND_ID",
+    "HF_LOCAL_BACKEND_FAMILY",
     "MANIFEST_FILE",
     "AbstentionMetrics",
     "AbstentionPrediction",
@@ -139,6 +169,11 @@ __all__ = [
     "BenchmarkResult",
     "BenchmarkSpec",
     "BenchmarkVerificationResult",
+    "CheckpointEligibilityResult",
+    "CheckpointInferenceCompatibility",
+    "CheckpointInferenceDevicePolicy",
+    "CheckpointPredictionError",
+    "CheckpointPredictorSpec",
     "ComparisonRow",
     "ConfusionCount",
     "CorpusCounts",
@@ -155,6 +190,7 @@ __all__ = [
     "EvidenceRuleBaseline",
     "FakeInferenceBackend",
     "FixedPriorBaseline",
+    "HfCheckpointInferenceBackend",
     "InferenceBackend",
     "InferenceError",
     "InferenceResponse",
@@ -175,11 +211,17 @@ __all__ = [
     "PromptTemplate",
     "RankingEntry",
     "SlmPredictor",
+    "VerifiedCheckpointBundle",
+    "VerifiedCheckpointPredictor",
     "WrittenBenchmark",
     "WrittenEvaluation",
+    "assess_checkpoint_prediction_eligibility",
     "audit_evaluation_run",
     "build_abstention_prediction",
+    "build_backend_invalid_prediction",
     "build_benchmark_export",
+    "build_checkpoint_inference_compatibility",
+    "build_cpu_inference_device_policy",
     "build_diagnosis_prediction",
     "build_evaluation_export",
     "build_invalid_prediction",
@@ -191,7 +233,10 @@ __all__ = [
     "compute_ranking",
     "derive_baseline_id",
     "derive_benchmark_id",
+    "derive_checkpoint_predictor_id",
     "derive_evaluation_id",
+    "derive_inference_compatibility_id",
+    "derive_inference_device_policy_id",
     "derive_prediction_id",
     "derive_predictor_id",
     "derive_prompt_template_id",
@@ -199,6 +244,8 @@ __all__ = [
     "diagnosis_prompt_template",
     "diagnosis_task",
     "evaluate_prepared_corpus",
+    "load_verified_checkpoint_bundle",
+    "parse_backend_response",
     "ratio_str",
     "read_benchmark",
     "read_evaluation",

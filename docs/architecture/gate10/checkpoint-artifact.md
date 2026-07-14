@@ -79,6 +79,12 @@ supported real inference backend list is locked EMPTY (max_length=0). Any
 future API asked to load a Gate 10D checkpoint as a real model has nothing to
 negotiate with — and no such API exists in this package.
 
+**Update (Gate 11):** the checkpoint-backed predictor now exists for the REAL
+format only (`verifiednet.real-checkpoint-v1`, Gate 10F). The Gate 10D fake
+format is unchanged and remains structurally ineligible: its manifest cannot
+even validate as a real-checkpoint manifest, so the Gate 11 eligibility
+assessment fails closed on it. See `../gate11/checkpoint-predictor.md`.
+
 ## 6. File roles and safe paths
 
 Every file: relative path, role, size, sha256, serialization id, required

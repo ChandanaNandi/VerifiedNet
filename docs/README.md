@@ -179,8 +179,24 @@ suite runs a deterministic stub end-to-end, and genuine weight mutation is a
 double-gated optional integration test. **No evaluation, benchmarking, or
 quality claim of the trained checkpoint exists.** See
 `architecture/gate10/real-training.md`.
+Gate 11 (verified checkpoint-backed predictor) is implemented with ADR-0028:
+model weights enter prediction ONLY through a verified immutable real
+checkpoint — fail-closed eligibility from the on-disk artifact alone (never a
+caller-supplied manifest), a `VerifiedCheckpointBundle` that loads no model at
+construction and re-verifies at the moment of use, a narrow Literal-locked
+inference scope (local HF Transformers, one architecture family, tokenizer
+from the payload only, CPU float32, no fallback/quantization/adapters/remote
+code/network), a second sanctioned lazy-ML site (`evaluation/hfinference.py`)
+with eval-mode/no-grad/inference-mode greedy decoding, and a
+`VerifiedCheckpointPredictor` on the UNCHANGED Gate 7/8 feature-only boundary
+reusing the Gate 8 prompt/parser/normalization/prediction union with a
+content-addressed `ckptpred-` identity embedded in a Gate-7 `BaselineSpec`.
+Evaluation now consumes verified training artifacts through exactly one
+sanctioned import; training still never imports evaluation. **No evaluation
+run, benchmark, metric, or quality claim of the checkpoint predictor exists.**
+See `architecture/gate11/checkpoint-predictor.md`.
 Layers beyond are **planned, not
-implemented** — no checkpoint-backed prediction, trained-model evaluation or
+implemented** — no trained-model evaluation or
 benchmark integration, prompt optimization, RAG,
 GraphRAG, agent, memory, or persistent workflow exists yet. The deterministic
 trust core (labs →

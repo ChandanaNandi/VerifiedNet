@@ -574,13 +574,13 @@ class HFTrainingEngine:
         _os.environ["TRANSFORMERS_OFFLINE"] = "1"
         S, E = ExecutionState, RealExecutionEventType
         try:
-            import torch  # type: ignore[import-not-found]
+            import torch  # type: ignore[import-not-found, unused-ignore]
         except ImportError as exc:
             raise TrainingEngineError(
                 RealFailureClass.MODEL_LOAD_FAILED,
                 f"torch unavailable: {exc}") from exc
         try:
-            from transformers import (  # type: ignore[import-not-found]
+            from transformers import (  # type: ignore[import-not-found, unused-ignore]
                 AutoModelForCausalLM,
                 AutoTokenizer,
             )
@@ -600,7 +600,7 @@ class HFTrainingEngine:
                     "data_order_canonical_no_shuffle"]
 
         try:
-            tokenizer = AutoTokenizer.from_pretrained(
+            tokenizer = AutoTokenizer.from_pretrained(  # type: ignore[no-untyped-call, unused-ignore]
                 str(tokenizer_dir), local_files_only=True)
         except Exception as exc:
             raise TrainingEngineError(
@@ -677,9 +677,9 @@ class HFTrainingEngine:
                 pad = tokenizer.pad_token_id or eos
                 input_ids = torch.tensor([
                     list(t) + [pad] * (max_len - len(t)) for t, _ in batch])
-                labels = torch.tensor([
+                label_ids = torch.tensor([
                     list(lb) + [-100] * (max_len - len(lb)) for _, lb in batch])
-                out = model(input_ids=input_ids, labels=labels)
+                out = model(input_ids=input_ids, labels=label_ids)
                 loss = out.loss / accum
                 if not torch.isfinite(loss):
                     raise TrainingEngineError(
@@ -710,7 +710,7 @@ class HFTrainingEngine:
                      consistency=ConsistencyClass.STRUCTURALLY_VERIFIED)
 
         try:
-            from safetensors.torch import (  # type: ignore[import-not-found]
+            from safetensors.torch import (  # type: ignore[import-not-found, unused-ignore]
                 save as st_save,
             )
 

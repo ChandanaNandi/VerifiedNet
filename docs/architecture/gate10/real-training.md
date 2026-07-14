@@ -168,3 +168,11 @@ Checkpoint-backed prediction behind the Gate 8 feature-only interface, then
 evaluation, then Gate 9 benchmark comparison — each as its own gate. Warm
 starts, resume, adapters, distributed execution, and publication remain
 deferred and forbidden here.
+
+**Update (Gate 11):** checkpoint-backed prediction is now implemented — see
+`../gate11/checkpoint-predictor.md` and ADR-0028. The real-checkpoint format
+defined here is byte-unchanged (the manifest's
+`predictor_adapter_version="deferred-next-gate-v0"` Literal stays as written;
+Gate 11's inference scope is a SEPARATE evaluation-side compatibility model,
+so existing checkpoint ids and digests remain valid). Evaluation and Gate 9
+benchmark comparison of the trained checkpoint remain the next boundary.

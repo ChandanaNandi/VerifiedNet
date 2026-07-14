@@ -46,6 +46,80 @@ from verifiednet.schemas.base import StrictModel
 PREDICTOR_VERSION = 1
 
 
+def build_backend_invalid_prediction(
+    *,
+    baseline_id: str,
+    task_id: str,
+    features_payload: dict[str, object],
+    reason_code: str,
+    raw_excerpt: str,
+) -> InvalidPrediction:
+    """The shared structured "no usable model output" outcome (Gate 8/11).
+
+    Every model-backed predictor maps backend failures and unusable output to
+    this explicit ``InvalidPrediction`` — never to an abstention and never to an
+    exception escaping the evaluation engine.
+    """
+    return build_invalid_prediction(
+        baseline_id=baseline_id, task_id=task_id,
+        feature_policy_id=str(features_payload.get("feature_policy_id", "")),
+        feature_payload=features_payload, reason_code=reason_code,
+        raw_excerpt=raw_excerpt,
+    )
+
+
+def parse_backend_response(
+    text: str,
+    *,
+    baseline_id: str,
+    task_id: str,
+    features_payload: dict[str, object],
+    normalization: NormalizationPolicy,
+    normalized_candidates: frozenset[str],
+) -> DiagnosisPrediction | AbstentionPrediction | InvalidPrediction:
+    """THE Gate 8 response parser: strict JSON → validated, normalized prediction.
+
+    Shared by every model-backed predictor (SLM and checkpoint-backed) so there
+    is exactly ONE parsing/validation/normalization pipeline. Deterministic:
+    a given raw text always maps to the same prediction for the same binding
+    context. Malformed output becomes an explicit ``InvalidPrediction``.
+    """
+    def invalid(reason: str) -> InvalidPrediction:
+        return build_backend_invalid_prediction(
+            baseline_id=baseline_id, task_id=task_id,
+            features_payload=features_payload, reason_code=reason,
+            raw_excerpt=text,
+        )
+
+    try:
+        data = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        return invalid("malformed_json")
+    if not isinstance(data, dict):
+        return invalid("not_an_object")
+    ptype = data.get("prediction_type")
+    fpid = str(features_payload.get("feature_policy_id", ""))
+    if ptype == "abstention":
+        return build_abstention_prediction(
+            baseline_id=baseline_id, task_id=task_id,
+            feature_policy_id=fpid, feature_payload=features_payload,
+            reason_code="model_abstained",
+        )
+    if ptype == "diagnosis":
+        family = data.get("fault_family")
+        if not isinstance(family, str) or not family.strip():
+            return invalid("missing_fault_family")
+        normalized = normalization.normalize(family)
+        if normalized not in normalized_candidates:
+            return invalid("unknown_fault_family")
+        return build_diagnosis_prediction(
+            baseline_id=baseline_id, task_id=task_id,
+            feature_policy_id=fpid, feature_payload=features_payload,
+            fault_family=normalized, matched_rules=(),
+        )
+    return invalid("unsupported_prediction_type")
+
+
 def derive_predictor_id(
     *,
     schema_version: int,
@@ -177,39 +251,16 @@ class SlmPredictor:
     def _invalid(
         self, payload: dict[str, object], reason: str, raw: str
     ) -> InvalidPrediction:
-        return build_invalid_prediction(
+        return build_backend_invalid_prediction(
             baseline_id=self._spec.baseline_id, task_id=self._task_id,
-            feature_policy_id=str(payload.get("feature_policy_id", "")),
-            feature_payload=payload, reason_code=reason, raw_excerpt=raw,
+            features_payload=payload, reason_code=reason, raw_excerpt=raw,
         )
 
     def _parse(
         self, text: str, *, features_payload: dict[str, object]
     ) -> DiagnosisPrediction | AbstentionPrediction | InvalidPrediction:
-        try:
-            data = json.loads(text)
-        except (json.JSONDecodeError, ValueError):
-            return self._invalid(features_payload, "malformed_json", text)
-        if not isinstance(data, dict):
-            return self._invalid(features_payload, "not_an_object", text)
-        ptype = data.get("prediction_type")
-        fpid = str(features_payload.get("feature_policy_id", ""))
-        if ptype == "abstention":
-            return build_abstention_prediction(
-                baseline_id=self._spec.baseline_id, task_id=self._task_id,
-                feature_policy_id=fpid, feature_payload=features_payload,
-                reason_code="model_abstained",
-            )
-        if ptype == "diagnosis":
-            family = data.get("fault_family")
-            if not isinstance(family, str) or not family.strip():
-                return self._invalid(features_payload, "missing_fault_family", text)
-            normalized = self._norm.normalize(family)
-            if normalized not in self._candidates:
-                return self._invalid(features_payload, "unknown_fault_family", text)
-            return build_diagnosis_prediction(
-                baseline_id=self._spec.baseline_id, task_id=self._task_id,
-                feature_policy_id=fpid, feature_payload=features_payload,
-                fault_family=normalized, matched_rules=(),
-            )
-        return self._invalid(features_payload, "unsupported_prediction_type", text)
+        return parse_backend_response(
+            text, baseline_id=self._spec.baseline_id, task_id=self._task_id,
+            features_payload=features_payload, normalization=self._norm,
+            normalized_candidates=self._candidates,
+        )

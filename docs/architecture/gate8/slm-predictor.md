@@ -118,3 +118,11 @@ reported accuracies demonstrate INTEGRATION, not model capability, over the tiny
 v1 corpus. Gate 8 stops here: no multi-model benchmarking, prompt optimization,
 fine-tuning, or retrieval augmentation. Those are later gates, and each would plug
 into this same feature-only boundary and immutable result format.
+
+**Update (Gate 11):** the checkpoint-backed predictor now exists behind this
+exact boundary. Its response parsing was NOT duplicated — the Gate 8 parser
+was extracted into shared module-level functions (`parse_backend_response`,
+`build_backend_invalid_prediction`), `SlmPredictor` delegates to them
+(behavior and all derived ids unchanged), and `VerifiedCheckpointPredictor`
+reuses them together with this document's prompt template, normalization, and
+prediction union. See `../gate11/checkpoint-predictor.md` and ADR-0028.

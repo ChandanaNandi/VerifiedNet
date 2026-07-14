@@ -34,13 +34,25 @@ VIOLATION_FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "securit
 
 SUBPROCESS_ALLOWED = {SRC / "runtime" / "process.py"}
 
-#: Gate 10F: the ONE sanctioned lazy-ML-import site. Only this file may
-#: reference torch/transformers, and test_hfexecutor_ml_imports_are_lazy
-#: separately proves every such import is function-level (lazy) — the module
-#: itself imports cleanly without the training-hf extras installed.
-ML_LAZY_ALLOWED = {SRC / "training" / "hfexecutor.py"}
+#: Gate 10F/11: the sanctioned lazy-ML-import sites. Only these files may
+#: reference torch/transformers — one training executor (Gate 10F) and one
+#: checkpoint-inference backend (Gate 11) — and the dedicated laziness tests
+#: separately prove every such import is function-level (lazy), so both
+#: modules import cleanly without the training-hf extras installed.
+ML_LAZY_ALLOWED = {
+    SRC / "training" / "hfexecutor.py",
+    SRC / "evaluation" / "hfinference.py",
+}
 ML_LAZY_MODULES = ("torch", "transformers", "peft", "bitsandbytes",
                    "accelerate", "safetensors")
+
+#: Gate 11: the ONE sanctioned consumer of the training package. The
+#: checkpoint-backed predictor consumes VERIFIED training artifacts (real
+#: checkpoints) through exactly one module of the training layer — the
+#: verified-checkpoint store. Everything else in evaluation stays training
+#: free, and training still never imports evaluation (ADR-0022 unchanged).
+TRAINING_CONSUMER_ALLOWED = {SRC / "evaluation" / "checkpointpred.py"}
+TRAINING_CONSUMER_MODULES = ("verifiednet.training.realckptstore",)
 
 #: The composition root. Every other package is "below" it and must not import
 #: it; only the orchestrator package itself (and test/tooling code outside src)
@@ -120,6 +132,8 @@ FORBIDDEN_IMPORTS: dict[str, tuple[str, ...]] = {
     # deterministic, offline CONSUMER: it must NOT import the live composition
     # root, the live lab, mutation/execution runtime, collectors, verifiers, or
     # scenario implementations — it never runs, re-derives, or trains anything.
+    # Gate 11: ML libraries are banned exactly as in training; the ONE
+    # sanctioned lazy site is evaluation/hfinference.py (ML_LAZY_ALLOWED).
     "evaluation": (
         "verifiednet.orchestrator",
         "verifiednet.labs",
@@ -129,6 +143,11 @@ FORBIDDEN_IMPORTS: dict[str, tuple[str, ...]] = {
         "verifiednet.runtime.mutation",
         "verifiednet.runtime.readonly",
         "verifiednet.runtime.process",
+        "torch",
+        "transformers",
+        "peft",
+        "bitsandbytes",
+        "accelerate",
     ),
     # training is the Gate 10A supervised-corpus layer: it consumes the prepared
     # corpus (datasets) ONLY. It must not import the evaluation package (its
@@ -211,10 +230,16 @@ def scan_file(path: Path, package: str | None) -> list[Violation]:
             violations.append(
                 Violation(str(path), lineno, "imports-datasets", module)
             )
-        # The training-corpus layer may not be imported by anything else.
+        # The training layer may not be imported by anything else, EXCEPT the
+        # one sanctioned Gate 11 consumer: the checkpoint-backed predictor may
+        # import ONLY the verified-checkpoint store (never planning, execution,
+        # or the training executor).
         if package != TRAINING_ROOT and (
             module == "verifiednet.training"
             or module.startswith("verifiednet.training.")
+        ) and not (
+            path in TRAINING_CONSUMER_ALLOWED
+            and module in TRAINING_CONSUMER_MODULES
         ):
             violations.append(
                 Violation(str(path), lineno, "imports-training", module)
@@ -441,7 +466,9 @@ def test_real_training_package_stays_isolated() -> None:
 
 @pytest.mark.security
 def test_no_lower_package_imports_training() -> None:
-    # No src package outside the training layer may import it (one-way flow).
+    # No src package outside the training layer may import it (one-way flow),
+    # except the Gate 11 checkpoint predictor's narrow verified-checkpoint
+    # consumption (TRAINING_CONSUMER_ALLOWED / TRAINING_CONSUMER_MODULES).
     offenders = [
         v
         for path in sorted(SRC.rglob("*.py"))
@@ -492,11 +519,10 @@ def test_guard_accepts_clean_fixture() -> None:
     assert scan_file(path, "collectors") == []
 
 
-def test_hfexecutor_ml_imports_are_lazy() -> None:
-    """The sanctioned lazy-ML site may import torch/transformers/safetensors
+def _assert_ml_imports_are_lazy(path: Path) -> None:
+    """A sanctioned lazy-ML site may import torch/transformers/safetensors
     ONLY inside function bodies — never at module level, so importing the
     module (and the package) succeeds without the training-hf extras."""
-    path = SRC / "training" / "hfexecutor.py"
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     module_level: list[str] = []
     for node in tree.body:  # module level ONLY
@@ -510,3 +536,41 @@ def test_hfexecutor_ml_imports_are_lazy() -> None:
     # exemption is used, not dormant)
     all_imports = {m.split(".")[0] for m, _ in _module_imports(tree)}
     assert "torch" in all_imports and "transformers" in all_imports
+
+
+def test_hfexecutor_ml_imports_are_lazy() -> None:
+    _assert_ml_imports_are_lazy(SRC / "training" / "hfexecutor.py")
+
+
+def test_hfinference_ml_imports_are_lazy() -> None:
+    _assert_ml_imports_are_lazy(SRC / "evaluation" / "hfinference.py")
+
+
+@pytest.mark.security
+def test_guard_detects_evaluation_importing_training_fixture() -> None:
+    # An evaluation module other than the sanctioned checkpoint predictor
+    # importing the training layer must be flagged (fixture path is outside
+    # TRAINING_CONSUMER_ALLOWED).
+    path = VIOLATION_FIXTURES / "evaluation_imports_training.py"
+    violations = scan_file(path, "evaluation")
+    assert any(v.rule == "imports-training" for v in violations)
+
+
+@pytest.mark.security
+def test_checkpoint_predictor_training_consumption_is_narrow() -> None:
+    # The sanctioned consumer file may import ONLY the verified-checkpoint
+    # store module — the real source file must carry no other training import,
+    # and no other evaluation file may import training at all.
+    for path in sorted((SRC / "evaluation").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        training_imports = [
+            m for m, _ in _module_imports(tree)
+            if m == "verifiednet.training"
+            or m.startswith("verifiednet.training.")
+        ]
+        if path in TRAINING_CONSUMER_ALLOWED:
+            assert training_imports, "the sanctioned consumer must be used"
+            assert all(m in TRAINING_CONSUMER_MODULES
+                       for m in training_imports), training_imports
+        else:
+            assert training_imports == [], (str(path), training_imports)
