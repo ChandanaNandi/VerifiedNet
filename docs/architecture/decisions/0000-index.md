@@ -39,6 +39,7 @@ implementation is deferred to the mapped future gates — see
 | 0026 | Training intent is immutable; execution authorization is environmental evidence | Accepted |
 | 0027 | Real executions are structurally verified, never replay-reconstructed; checkpoints require verified authorization + completed execution | Accepted |
 | 0028 | Model weights enter prediction only through a verified immutable checkpoint, behind the feature-only boundary | Accepted |
+| 0029 | Fine-tuning effects require a matched, unconfounded base-versus-trained comparison; wording is governed by a frozen interpretation policy | Accepted |
 
 Format for each record: **Status**, **Context**, **Decision**, **Consequences**,
 **References** (to the gate document or source that motivated it).

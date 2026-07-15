@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Protocol, runtime_checkable
 
 from pydantic import Field, model_validator
 
@@ -245,6 +245,38 @@ def assess_checkpoint_prediction_eligibility(
 # ---------------------------------------------------------------------------
 # Verified checkpoint bundle (verified descriptors only; NO model loading)
 # ---------------------------------------------------------------------------
+
+
+@runtime_checkable
+class VerifiedInferenceBundle(Protocol):
+    """What the local inference backend may consume: a VERIFIED bundle only.
+
+    Satisfied by ``VerifiedCheckpointBundle`` (Gate 11) and by the Gate 12
+    ``VerifiedBaseModelBundle`` — both are constructible only through a
+    fail-closed verification of an on-disk artifact, expose role-resolved
+    payload paths, and re-verify at the moment of use. There is deliberately
+    NO way to satisfy this protocol from a raw, unverified directory without
+    writing new verification code.
+    """
+
+    @property
+    def root(self) -> Path: ...
+
+    @property
+    def weights_path(self) -> Path: ...
+
+    @property
+    def config_path(self) -> Path: ...
+
+    @property
+    def tokenizer_path(self) -> Path: ...
+
+    @property
+    def inference_compatibility(self) -> CheckpointInferenceCompatibility: ...
+
+    def fingerprint(self) -> dict[str, str]: ...
+
+    def reverify(self) -> object: ...
 
 
 @dataclass(frozen=True)

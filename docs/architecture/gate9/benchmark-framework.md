@@ -103,3 +103,9 @@ statistical comparison of predictor quality. Gate 9 stops here: no prompt
 optimization, ensembling, voting, reranking, fine-tuning, or retrieval. Any later
 optimization gate adds predictors to the benchmark set but may not change what the
 benchmark holds constant across predictors, nor bypass the evaluator.
+
+**Update (Gate 12):** the first trained checkpoint was benchmarked through
+this framework unchanged, against the matched base model and both rule
+baselines. Paired base-versus-trained statistics live in a SEPARATE
+`comparisons/` artifact (ADR-0029) and never alter this ranking. See
+`../gate12/checkpoint-benchmark.md`.

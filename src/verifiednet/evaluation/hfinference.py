@@ -31,7 +31,7 @@ from typing import Any
 
 from verifiednet.evaluation.checkpointpred import (
     CheckpointInferenceDevicePolicy,
-    VerifiedCheckpointBundle,
+    VerifiedInferenceBundle,
 )
 from verifiednet.evaluation.inference import (
     BackendUnavailableError,
@@ -44,17 +44,23 @@ HF_CHECKPOINT_BACKEND_ID = "hf-checkpoint-inference-v1"
 
 
 class HfCheckpointInferenceBackend:
-    """Greedy, CPU, float32 text generation from a verified checkpoint.
+    """Greedy, CPU, float32 text generation from a VERIFIED bundle.
 
     Implements the Gate 8 ``InferenceBackend`` protocol so the checkpoint
     predictor plugs into the SAME evaluation boundary as every other backend.
     Construction is cheap and import-pure; all ML work is deferred.
+
+    Gate 12 note: the backend accepts any ``VerifiedInferenceBundle`` — the
+    Gate 11 verified real checkpoint or the Gate 12 verified base-model
+    snapshot — so the matched base-versus-trained comparison runs through ONE
+    inference stack with the weights as the only difference. There is no path
+    into this backend from an unverified directory.
     """
 
     def __init__(
         self,
         *,
-        bundle: VerifiedCheckpointBundle,
+        bundle: VerifiedInferenceBundle,
         device_policy: CheckpointInferenceDevicePolicy,
         backend_id: str = HF_CHECKPOINT_BACKEND_ID,
     ) -> None:

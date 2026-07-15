@@ -195,9 +195,22 @@ Evaluation now consumes verified training artifacts through exactly one
 sanctioned import; training still never imports evaluation. **No evaluation
 run, benchmark, metric, or quality claim of the checkpoint predictor exists.**
 See `architecture/gate11/checkpoint-predictor.md`.
+Gate 12 (evaluate and benchmark the first trained checkpoint) is implemented
+with ADR-0029: the checkpoint predictor runs through the UNCHANGED Gate 7
+engine and UNCHANGED Gate 9 benchmark against a MATCHED base-model predictor —
+the approved pinned snapshot, verified fail-closed from disk into a
+`VerifiedBaseModelBundle` served by the same Gate 11 inference stack, so
+weights are the only intended difference (any confound is recorded and blocks
+an unqualified conclusion). An exact paired comparison over aligned example
+ids, a deterministic disagreement report with transition categories, and a
+frozen `BenchmarkInterpretationPolicy` (wording only: fixture corpora →
+engineering conclusions, <30 eligible test examples → underpowered, zero
+changes → no observed effect, regressions always surfaced) persist as an
+immutable content-addressed `comparisons/<cmp-…>/` artifact. Measurement
+never feeds training. **No further training, prompt optimization, deployment,
+RAG, or agents exist.** See `architecture/gate12/checkpoint-benchmark.md`.
 Layers beyond are **planned, not
-implemented** — no trained-model evaluation or
-benchmark integration, prompt optimization, RAG,
+implemented** — no prompt optimization, RAG,
 GraphRAG, agent, memory, or persistent workflow exists yet. The deterministic
 trust core (labs →
 faults → evidence → verification → oracle → incidents → recovery → artifacts → index) is

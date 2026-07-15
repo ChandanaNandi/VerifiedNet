@@ -176,3 +176,8 @@ defined here is byte-unchanged (the manifest's
 Gate 11's inference scope is a SEPARATE evaluation-side compatibility model,
 so existing checkpoint ids and digests remain valid). Evaluation and Gate 9
 benchmark comparison of the trained checkpoint remain the next boundary.
+
+**Update (Gate 12):** evaluation and benchmark comparison are now implemented
+(matched, unconfounded, policy-worded — ADR-0029); the checkpoint remained
+byte-identical throughout, and its training corpus/plan/authorization/
+execution artifacts stayed untouched. See `../gate12/checkpoint-benchmark.md`.

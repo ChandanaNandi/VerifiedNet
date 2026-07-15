@@ -46,12 +46,17 @@ ML_LAZY_ALLOWED = {
 ML_LAZY_MODULES = ("torch", "transformers", "peft", "bitsandbytes",
                    "accelerate", "safetensors")
 
-#: Gate 11: the ONE sanctioned consumer of the training package. The
-#: checkpoint-backed predictor consumes VERIFIED training artifacts (real
-#: checkpoints) through exactly one module of the training layer — the
-#: verified-checkpoint store. Everything else in evaluation stays training
-#: free, and training still never imports evaluation (ADR-0022 unchanged).
-TRAINING_CONSUMER_ALLOWED = {SRC / "evaluation" / "checkpointpred.py"}
+#: Gate 11/12: the sanctioned consumers of the training package. The
+#: checkpoint-backed predictor (Gate 11) and the verified base-model bundle
+#: (Gate 12) consume VERIFIED artifacts through exactly one module of the
+#: training layer — the verified-checkpoint store (structural safetensors
+#: parsing + real-checkpoint verification). Everything else in evaluation
+#: stays training free, and training still never imports evaluation
+#: (ADR-0022 unchanged).
+TRAINING_CONSUMER_ALLOWED = {
+    SRC / "evaluation" / "checkpointpred.py",
+    SRC / "evaluation" / "basemodel.py",
+}
 TRAINING_CONSUMER_MODULES = ("verifiednet.training.realckptstore",)
 
 #: The composition root. Every other package is "below" it and must not import

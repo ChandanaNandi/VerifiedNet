@@ -124,3 +124,9 @@ v1 corpus is tiny, so the reported accuracies demonstrate the framework, not a
 statistical benchmark. When Gate 8+ introduces a model/LLM predictor it plugs into
 the SAME feature-only boundary and the SAME immutable, self-verifying result
 format — no redesign of scoring or the boundary is required.
+
+**Update (Gate 12):** proven again for real weights — the Gate 11
+checkpoint-backed predictor and the Gate 12 matched base-model predictor were
+evaluated through this engine with ZERO changes to the task, scoring,
+normalization, metrics, or artifact format. See
+`../gate12/checkpoint-benchmark.md` and ADR-0029.

@@ -1043,6 +1043,104 @@ def ckpt_predictor_pipeline(realtrain_pipeline) -> Callable[..., object]:
     return _helper
 
 
+@pytest.fixture
+def matched_pair_pipeline(eval_pipeline, ckpt_predictor_pipeline) -> Callable[..., object]:
+    """Gate 12 chain: matched base + trained predictors over ONE prepared corpus.
+
+    ``helper(tmp_path, base_responder=..., trained_responder=...)`` builds the
+    prepared evaluation corpus, a stub-produced genuine checkpoint (trained
+    side), a tiny verified base-model snapshot dir (base side), constructs both
+    matched predictors with fake offline backends, evaluates both through the
+    unchanged Gate 7 engine, and assesses fairness. Entirely offline.
+    """
+    from dataclasses import dataclass as _dc
+
+    from verifiednet.evaluation import (
+        FakeInferenceBackend,
+        VerifiedBaseModelPredictor,
+        VerifiedCheckpointPredictor,
+        assess_matched_pair_fairness,
+        base_model_predictor_facts,
+        checkpoint_predictor_facts,
+        evaluate_prepared_corpus,
+        load_verified_base_model_bundle,
+    )
+    from verifiednet.training import build_minimal_safetensors
+
+    @_dc(frozen=True)
+    class _M:
+        evalctx: object
+        ckptctx: object
+        base_dir: object
+        base_bundle: object
+        base: object
+        trained: object
+        base_run: object
+        trained_run: object
+        fairness: object
+        make_base: object
+        make_trained: object
+
+    _ACCEPTED = [("ras-ref", "run-a"), ("nr-rev", "run-b"), ("pf-ref", "run-c")]
+
+    def _helper(tmp_path, *, base_responder, trained_responder):
+        eval_root = tmp_path / "evalside"
+        train_root = tmp_path / "trainside"
+        eval_root.mkdir()
+        train_root.mkdir()
+        evalctx = eval_pipeline(eval_root, accepted=_ACCEPTED,
+                                rejected=["run-rej"])
+        ckptctx = ckpt_predictor_pipeline(train_root, accepted=_ACCEPTED,
+                                          rejected=["run-rej"])
+        base_dir = tmp_path / "base-model"
+        base_dir.mkdir()
+        (base_dir / "model.safetensors").write_bytes(build_minimal_safetensors({
+            "wte.weight": ((4, 4), bytes([7]) * 64),
+            "lm_head.weight": ((4, 4), bytes([9]) * 64)}))
+        (base_dir / "config.json").write_text(_json.dumps(
+            {"architectures": ["AutoModelForCausalLM"], "vocab_size": 4},
+            sort_keys=True))
+        (base_dir / "tokenizer.json").write_text(_json.dumps(
+            {"version": "1.0", "model": {"type": "test-vocab"}},
+            sort_keys=True))
+        base_bundle = load_verified_base_model_bundle(
+            base_dir, model_identifier="verifiednet-test/tiny-slm",
+            model_revision="a" * 40,
+            architecture_class="AutoModelForCausalLM",
+            compatibility=ckptctx.compatibility)
+
+        def make_base(responder):
+            return VerifiedBaseModelPredictor(
+                task=ckptctx.task, bundle=base_bundle,
+                backend=FakeInferenceBackend(responder=responder),
+                prompt_template=ckptctx.template,
+                device_policy=ckptctx.device_policy, backend_family="fake")
+
+        def make_trained(responder):
+            return VerifiedCheckpointPredictor(
+                task=ckptctx.task, bundle=ckptctx.bundle,
+                backend=FakeInferenceBackend(responder=responder),
+                prompt_template=ckptctx.template,
+                device_policy=ckptctx.device_policy, backend_family="fake")
+
+        base = make_base(base_responder)
+        trained = make_trained(trained_responder)
+        base_run = evaluate_prepared_corpus(evalctx.loaded, base, ckptctx.task)
+        trained_run = evaluate_prepared_corpus(
+            evalctx.loaded, trained, ckptctx.task)
+        fairness = assess_matched_pair_fairness(
+            base=base_model_predictor_facts(base),
+            trained=checkpoint_predictor_facts(trained),
+            base_run=base_run, trained_run=trained_run)
+        return _M(evalctx=evalctx, ckptctx=ckptctx, base_dir=base_dir,
+                  base_bundle=base_bundle, base=base, trained=trained,
+                  base_run=base_run, trained_run=trained_run,
+                  fairness=fairness, make_base=make_base,
+                  make_trained=make_trained)
+
+    return _helper
+
+
 # --------------------------------------------------------------------------
 # Gate 5.2: deterministic neighbor-removal lab sim + builder, shared by the
 # unit and failure tiers (tests/ is not a package; shared helpers live here).

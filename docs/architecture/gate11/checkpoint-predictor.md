@@ -153,3 +153,10 @@ training, no weight change, no RAG/agents/tools, no publication, no
 downloads, no other model families. The next boundary is Gate 12: evaluate
 the trained checkpoint through the unchanged Gate 7 engine and compare it
 through the unchanged Gate 9 benchmark.
+
+**Update (Gate 12):** that boundary is now implemented — the predictor was
+evaluated and benchmarked unchanged, against a matched base-model predictor
+served by this same inference backend through a `VerifiedInferenceBundle`
+protocol (the Gate 12 `VerifiedBaseModelBundle` is the second implementation;
+raw directories still cannot reach the backend). See
+`../gate12/checkpoint-benchmark.md` and ADR-0029.
