@@ -139,3 +139,12 @@ No further training, prompt optimization, corpus expansion, checkpoint
 deployment, publication, RAG, agents, warm starts, adapters, or production
 integration. Documentation may recommend future experiments; nothing here
 executes them.
+
+## Gate 15 note
+
+The matched base-versus-trained design, fairness checks, paired comparison,
+and interpretation policy defined here are consumed UNCHANGED by the Gate 15
+controlled experiment, which adds a preregistered frozen SUCCESS policy on
+top: outcomes derive from raw paired counts, a confounded comparison is an
+`experiment_failed`, and rank alone can never establish improvement
+(ADR-0033; see `../gate15/controlled-experiment.md`).

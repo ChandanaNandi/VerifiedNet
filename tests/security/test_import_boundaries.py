@@ -81,6 +81,14 @@ EVALUATION_ROOT = "evaluation"
 #: any model-training library. No other src package may import it.
 TRAINING_ROOT = "training"
 
+#: The controlled-experiment layer (Gate 15). The TOP composition layer for
+#: model-quality experiments: it is the ONE package allowed to import BOTH the
+#: training lifecycle and the evaluation stack (composing them forward into a
+#: preregistered experiment, ADR-0033). Nothing may import it, it never enters
+#: the deterministic truth chain, and it stays ML-import-free — the existing
+#: training-never-imports-evaluation edge (ADR-0022) is unchanged.
+EXPERIMENT_ROOT = "experiment"
+
 # package -> forbidden import prefixes
 FORBIDDEN_IMPORTS: dict[str, tuple[str, ...]] = {
     "schemas": (
@@ -174,6 +182,23 @@ FORBIDDEN_IMPORTS: dict[str, tuple[str, ...]] = {
         "bitsandbytes",
         "accelerate",
     ),
+    # the controlled-experiment layer composes training + evaluation FORWARD
+    # (Gate 15); it must not touch live execution and is strictly ML-free —
+    # it binds identities and classifies outcomes, it never trains or infers.
+    "experiment": (
+        "verifiednet.orchestrator",
+        "verifiednet.labs",
+        "verifiednet.collectors",
+        "verifiednet.verifiers",
+        "verifiednet.faults",
+        "verifiednet.runtime",
+        "torch",
+        "transformers",
+        "peft",
+        "bitsandbytes",
+        "accelerate",
+        "safetensors",
+    ),
 }
 
 
@@ -228,7 +253,8 @@ def scan_file(path: Path, package: str | None) -> list[Violation]:
         # The read-only dataset engine may not be imported by anything below it
         # EXCEPT its legitimate downstream consumers: the evaluation engine and
         # the training-corpus layer.
-        if package not in (DATASETS_ROOT, EVALUATION_ROOT, TRAINING_ROOT) and (
+        if package not in (DATASETS_ROOT, EVALUATION_ROOT, TRAINING_ROOT,
+                           EXPERIMENT_ROOT) and (
             module == "verifiednet.datasets"
             or module.startswith("verifiednet.datasets.")
         ):
@@ -236,10 +262,11 @@ def scan_file(path: Path, package: str | None) -> list[Violation]:
                 Violation(str(path), lineno, "imports-datasets", module)
             )
         # The training layer may not be imported by anything else, EXCEPT the
-        # one sanctioned Gate 11 consumer: the checkpoint-backed predictor may
-        # import ONLY the verified-checkpoint store (never planning, execution,
-        # or the training executor).
-        if package != TRAINING_ROOT and (
+        # one sanctioned Gate 11 consumer (the checkpoint-backed predictor may
+        # import ONLY the verified-checkpoint store — never planning,
+        # execution, or the training executor) and the Gate 15
+        # controlled-experiment composition layer.
+        if package not in (TRAINING_ROOT, EXPERIMENT_ROOT) and (
             module == "verifiednet.training"
             or module.startswith("verifiednet.training.")
         ) and not (
@@ -249,13 +276,23 @@ def scan_file(path: Path, package: str | None) -> list[Violation]:
             violations.append(
                 Violation(str(path), lineno, "imports-training", module)
             )
-        # The evaluation engine may not be imported by anything else (one-way flow).
-        if package != EVALUATION_ROOT and (
+        # The evaluation engine may not be imported by anything else (one-way
+        # flow) EXCEPT the Gate 15 controlled-experiment composition layer.
+        if package not in (EVALUATION_ROOT, EXPERIMENT_ROOT) and (
             module == "verifiednet.evaluation"
             or module.startswith("verifiednet.evaluation.")
         ):
             violations.append(
                 Violation(str(path), lineno, "imports-evaluation", module)
+            )
+        # The controlled-experiment layer is a top layer alongside the
+        # orchestrator: NO other package may import it.
+        if package != EXPERIMENT_ROOT and (
+            module == "verifiednet.experiment"
+            or module.startswith("verifiednet.experiment.")
+        ):
+            violations.append(
+                Violation(str(path), lineno, "imports-experiment", module)
             )
 
     for node in ast.walk(tree):

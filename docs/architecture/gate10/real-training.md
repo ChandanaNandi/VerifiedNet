@@ -181,3 +181,12 @@ benchmark comparison of the trained checkpoint remain the next boundary.
 (matched, unconfounded, policy-worded — ADR-0029); the checkpoint remained
 byte-identical throughout, and its training corpus/plan/authorization/
 execution artifacts stayed untouched. See `../gate12/checkpoint-benchmark.md`.
+
+## Gate 15 note
+
+The bounded real-execution contract defined here (authorized executor,
+Literal-locked safety envelope of at most 64 examples / 64 optimizer steps,
+one on-completion checkpoint, no retry/resume) is consumed UNCHANGED by the
+Gate 15 controlled experiment; the experiment's preregistered first-64
+canonical-order training-corpus cap exists precisely to fit this envelope
+(ADR-0033; see `../gate15/controlled-experiment.md`).

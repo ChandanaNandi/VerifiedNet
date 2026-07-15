@@ -117,3 +117,11 @@ No larger-scale fine-tuning, no evaluation-engine change, no ranking change,
 no prompt change or optimization, no retrieval, no agents. The corpus and
 reliability layers exist so that the NEXT measurement (and only then, the
 next training decision) can be grounded in adequate, verified data.
+
+## Gate 15 note
+
+Structured-output reliability reports remain DIAGNOSTICS in the Gate 15
+controlled experiment: invalid-output counts feed the frozen success policy
+as raw counts (an increase blocks `improved`), but rates are never ranked on
+and the parser/prompt stay byte-unchanged (ADR-0033; see
+`../gate15/controlled-experiment.md`).

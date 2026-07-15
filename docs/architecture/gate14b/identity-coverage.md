@@ -144,3 +144,11 @@ identity — identity structure identical to the full campaign) registering
 v1→v2→v3 with version listing, identity-delta comparison, and a
 `ready_for_controlled_experiment` verdict; and the gated full operational
 campaign with v1/v2 byte-immutability fingerprints.
+
+## Gate 15 note
+
+The `ready_for_controlled_experiment` verdict persisted by this gate
+(`ready-0b128bea7400a13f` for corpus v3) is the AUTHORIZATION the Gate 15
+experiment specification Literal-locks: an experiment against a corpus
+without that outcome is unrepresentable (ADR-0033; see
+`../gate15/controlled-experiment.md`).

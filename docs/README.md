@@ -257,6 +257,28 @@ imbalance 1.46 — verdict `ready_for_controlled_experiment`. v1 and v2 remain
 byte-identical; no model loads anywhere. **No retraining, evaluation,
 benchmarking, prompt, scoring, ranking, label, or split-policy change.** See
 `architecture/gate14b/identity-coverage.md`.
+Gate 15 (controlled retraining experiment) is implemented with ADR-0033:
+the project's first genuine model-quality experiment is PREREGISTERED (a
+content-addressed, immutable `ControlledTrainingExperimentSpec` persisted
+before any training runs, with the question, hypothesis, frozen metrics, and
+a Literal-locked frozen success policy), ONE-RUN/ONE-CHECKPOINT by
+construction, and firewalled (an ordered phase declaration with no backward
+transition, a structural audit scanning training-side bytes for every
+held-out identifier, and the package boundary keeping evaluation facts
+unimportable from training). The train-only Gate 15 corpus derives from the
+v3 prepared chain (128 eligible; preregistered deterministic first-64
+canonical-order cap under the Literal-locked Gate 10F safety envelope); one
+bounded real CPU fine-tune of the pinned Qwen2.5-0.5B-Instruct snapshot (64
+optimizer steps) produces the single treatment checkpoint; base and trained
+predictors are evaluated on registered corpus v3 through the unchanged Gate
+7/9/12/13 contracts; and the self-validating experiment result derives its
+outcome (improved / regressed / unchanged / mixed / inconclusive /
+experiment_failed) from raw paired counts — a dishonest claim is
+unrepresentable. A new `verifiednet.experiment` top layer composes training
+and evaluation forward; nothing imports it. **No prompt, parser, scoring,
+ranking, corpus, or split change; no second configuration, RAG, agents,
+deployment, or publication.** See
+`architecture/gate15/controlled-experiment.md`.
 Layers beyond are **planned, not
 implemented** — no prompt optimization, RAG,
 GraphRAG, agent, memory, or persistent workflow exists yet. The deterministic

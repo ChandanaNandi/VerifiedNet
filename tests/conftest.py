@@ -1376,6 +1376,294 @@ def gate14b_corpus_pipeline(eval_pipeline) -> Callable[..., object]:
     return _helper
 
 
+#: Gate 15 offline fixture entries: two train identities, one held-out test
+#: identity (2 runs), one held-out validation identity, one abstention.
+def gate15_fixture_entries():
+    from verifiednet.orchestrator.catalog import case_by_id
+    from verifiednet.orchestrator.expansion import expansion_topology
+
+    accepted = [
+        ("ras-ref", "run-train-1"),   # v1 topology -> train
+        ("nr-ref", "run-train-2"),    # v1 topology -> train
+        (case_by_id("ras-ref"), expansion_topology("2r-v2"), "run-test-1"),
+        (case_by_id("ras-ref"), expansion_topology("2r-v2"), "run-test-2"),
+        (case_by_id("ras-rev"), expansion_topology("2r-v4"), "run-val-1"),
+    ]
+    return accepted, ["run-rej"]
+
+
+@pytest.fixture
+def experiment_pipeline(realtrain_pipeline) -> Callable[..., object]:
+    """Gate 15 offline chain: stub-trained checkpoint + four deterministic
+    rule-baseline evaluations (two standing in for the matched base/trained
+    model predictors) + benchmark + reliability + a preregistered, finalized
+    controlled-experiment store. Entirely offline: no ML library, no network.
+
+    ``helper(tmp_path)`` returns an object exposing every intermediate the
+    Gate 15 tiers need (spec, bindings, result, store root, prepared corpus,
+    runs, policies, and the underlying training context).
+    """
+    from dataclasses import dataclass as _dc
+
+    from verifiednet.datasets import load_prepared
+    from verifiednet.evaluation import (
+        DecodingConfig,
+        EvidenceRuleBaseline,
+        FixedPriorBaseline,
+        build_default_interpretation_policy,
+        build_structured_output_report,
+        compute_parser_statistics,
+        diagnosis_prompt_template,
+        diagnosis_task,
+        evaluate_prepared_corpus,
+        run_benchmark,
+        write_structured_output_report,
+    )
+    from verifiednet.experiment import (
+        BenchmarkBinding,
+        BenchmarkRankingRow,
+        CheckpointBinding,
+        EvaluationBindings,
+        ExperimentRuntimeEnvelope,
+        PairedSummary,
+        ReliabilitySummary,
+        TrainingPhaseBinding,
+        build_experiment_result,
+        build_experiment_spec,
+        build_success_policy,
+        compute_family_paired_counts,
+        compute_partition_paired_counts,
+        extract_primary_metrics,
+        preregister_experiment,
+        write_experiment_result,
+    )
+    from verifiednet.training import (
+        load_training_corpus,
+        read_real_checkpoint,
+        read_real_execution,
+        read_training_authorization,
+        read_training_plan,
+    )
+
+    @_dc(frozen=True)
+    class _E:
+        spec: object
+        training: object
+        checkpoint: object
+        evaluations: object
+        benchmark_binding: object
+        paired: object
+        reliability: object
+        result: object
+        written: object
+        experiments_root: object
+        prepared: object
+        base_run: object
+        trained_run: object
+        benchmark: object
+        success_policy: object
+        trainctx: object
+
+    def _helper(tmp_path):
+        from verifiednet.datasets.models import DatasetPartition
+        from verifiednet.datasets.verifier import DatasetCheck
+
+        accepted, rejected = gate15_fixture_entries()
+        trainctx = realtrain_pipeline(tmp_path, accepted=accepted,
+                                      rejected=rejected)
+        written_exec = trainctx.execute()
+        assert written_exec.final_state.value == "completed"
+        loaded_exec = read_real_execution(written_exec.root)
+        checkpoint_dir = (trainctx.output_root / "real-checkpoints"
+                          / written_exec.checkpoint_id)
+        ckpt_manifest = read_real_checkpoint(checkpoint_dir).manifest
+
+        plan = read_training_plan(trainctx.plan_dir)
+        corpus_manifest = load_training_corpus(trainctx.corpus_root).manifest
+        auth = read_training_authorization(trainctx.auth_dir)
+        prepared = load_prepared(trainctx.prectx.planctx.prepared_dir)
+
+        task = diagnosis_task()
+        fixed = FixedPriorBaseline(
+            task=task, fixed_fault_family="bgp_remote_as_mismatch")
+        rule = EvidenceRuleBaseline(
+            task=task, default_fault_family="bgp_remote_as_mismatch")
+        base_stand_in = FixedPriorBaseline(
+            task=task, fixed_fault_family="bgp_neighbor_removal")
+        trained_stand_in = EvidenceRuleBaseline(
+            task=task, default_fault_family="bgp_neighbor_removal")
+        base_run = evaluate_prepared_corpus(prepared, base_stand_in, task)
+        trained_run = evaluate_prepared_corpus(
+            prepared, trained_stand_in, task)
+        benchmark = run_benchmark(
+            prepared, task=task,
+            predictors=[fixed, rule, base_stand_in, trained_stand_in])
+        report = build_structured_output_report(benchmark)
+        written_report = write_structured_output_report(
+            report, tmp_path / "structured-reports")
+
+        success_policy = build_success_policy(min_eligible_test_examples=2)
+        spec = build_experiment_spec(
+            experiment_name="gate15-offline-fixture",
+            experiment_version=1,
+            scientific_question="does the stub chain hold structurally?",
+            hypothesis="the offline chain is structurally sound",
+            evaluation_corpus_id="evalcorpus-" + "0" * 16,
+            evaluation_corpus_digest="ecdig-" + "0" * 24,
+            readiness_assessment_id="ready-" + "0" * 16,
+            source_prepared_digest=prepared.manifest.prepared_digest,
+            training_corpus_policy_id=(
+                corpus_manifest.training_data_policy.training_data_policy_id),
+            training_corpus_id=corpus_manifest.training_corpus_id,
+            training_corpus_digest=corpus_manifest.training_corpus_digest,
+            eligible_train_examples=corpus_manifest.example_count,
+            training_example_cap=corpus_manifest.example_count,
+            cap_rationale="offline fixture: the full corpus fits the "
+                          "envelope",
+            model_approval_id="modelappr-" + "0" * 16,
+            model_artifact_id=(
+                auth.authorization.model_artifact.resolved_model_artifact_id),
+            tokenizer_artifact_id=(
+                auth.authorization.tokenizer_artifact
+                .resolved_tokenizer_artifact_id),
+            model_identifier="verifiednet-test/tiny-slm",
+            model_revision="b" * 40,
+            tokenizer_revision="b" * 40,
+            training_spec_id=plan.plan.request.spec.training_spec_id,
+            training_plan_id=plan.plan.training_plan_id,
+            training_plan_digest=plan.manifest.plan_digest,
+            bounded_model_policy_id=(
+                trainctx.model_policy.bounded_model_policy_id),
+            objective_policy_id=(
+                trainctx.objective_policy.objective_policy_id),
+            runtime_envelope=ExperimentRuntimeEnvelope(
+                max_examples=16, max_epochs=4, max_optimizer_steps=16,
+                max_sequence_length=1024, max_effective_batch_size=4),
+            prompt_template_id=diagnosis_prompt_template().prompt_template_id,
+            decoding=DecodingConfig(max_tokens=64),
+            normalization_policy_id=task.normalization.policy_id,
+            scoring_policy_version=task.scoring_policy_version,
+            interpretation_policy_id=(
+                build_default_interpretation_policy()
+                .interpretation_policy_id),
+            success_policy=success_policy)
+        experiments_root = tmp_path / "controlled-experiments"
+        preregister_experiment(spec, experiments_root)
+
+        losses = loaded_exec.result.observed_losses
+        training = TrainingPhaseBinding(
+            experiment_id=spec.experiment_id,
+            training_corpus_id=corpus_manifest.training_corpus_id,
+            training_corpus_digest=corpus_manifest.training_corpus_digest,
+            corpus_slice_id=trainctx.slice_policy.corpus_slice_id,
+            training_spec_id=plan.plan.request.spec.training_spec_id,
+            training_plan_id=plan.plan.training_plan_id,
+            training_plan_digest=plan.manifest.plan_digest,
+            authorization_id=auth.authorization.authorization_id,
+            authorization_digest=auth.manifest.authorization_digest,
+            bounded_model_policy_id=(
+                trainctx.model_policy.bounded_model_policy_id),
+            objective_policy_id=(
+                trainctx.objective_policy.objective_policy_id),
+            real_execution_policy_id=(
+                trainctx.execution_policy.real_execution_policy_id),
+            model_approval_id="modelappr-" + "0" * 16,
+            execution_id=written_exec.execution_id,
+            execution_digest=written_exec.execution_digest,
+            completed_optimizer_steps=(
+                loaded_exec.result.completed_optimizer_steps),
+            completed_epochs=loaded_exec.result.completed_epochs,
+            observed_loss_count=len(losses),
+            first_observed_loss=losses[0], last_observed_loss=losses[-1])
+        lineage = ckpt_manifest.lineage
+        checkpoint = CheckpointBinding(
+            experiment_id=spec.experiment_id,
+            checkpoint_id=ckpt_manifest.checkpoint_id,
+            checkpoint_digest=ckpt_manifest.checkpoint_digest,
+            lineage_id=lineage.lineage_id,
+            real_execution_id=lineage.real_execution_id,
+            training_plan_id=lineage.training_plan_id,
+            training_corpus_id=lineage.training_corpus_id,
+            lineage_checks=(
+                DatasetCheck(rule="execution_matches",
+                             passed=lineage.real_execution_id
+                             == written_exec.execution_id, detail=""),
+                DatasetCheck(rule="plan_matches",
+                             passed=lineage.training_plan_id
+                             == plan.plan.training_plan_id, detail=""),
+                DatasetCheck(rule="corpus_matches",
+                             passed=lineage.training_corpus_id
+                             == corpus_manifest.training_corpus_id,
+                             detail="")))
+        evaluations = EvaluationBindings(
+            experiment_id=spec.experiment_id,
+            fixed_prior_evaluation_id=next(
+                r.evaluation_id for r in benchmark.evaluation_runs
+                if r.baseline_spec.baseline_id == fixed.spec.baseline_id),
+            evidence_rule_evaluation_id=next(
+                r.evaluation_id for r in benchmark.evaluation_runs
+                if r.baseline_spec.baseline_id == rule.spec.baseline_id),
+            base_baseline_id=base_stand_in.spec.baseline_id,
+            base_evaluation_id=base_run.evaluation_id,
+            base_evaluation_digest="evdig-" + "0" * 24,
+            trained_baseline_id=trained_stand_in.spec.baseline_id,
+            trained_evaluation_id=trained_run.evaluation_id,
+            trained_evaluation_digest="evdig-" + "1" * 24)
+        benchmark_binding = BenchmarkBinding(
+            experiment_id=spec.experiment_id,
+            benchmark_id=benchmark.spec.benchmark_id,
+            benchmark_digest="benchdig-" + "0" * 24,
+            ranking=tuple(
+                BenchmarkRankingRow(
+                    predictor_identifier=entry.predictor_identifier,
+                    rank=entry.rank)
+                for entry in benchmark.ranking))
+        paired = PairedSummary(
+            experiment_id=spec.experiment_id,
+            comparison_id="cmp-" + "0" * 16,
+            comparison_digest="cmpdig-" + "0" * 24,
+            interpretation_conclusion="engineering_fixture",
+            counts_all=compute_partition_paired_counts(
+                base_run, trained_run, partitions=None),
+            counts_non_train=compute_partition_paired_counts(
+                base_run, trained_run,
+                partitions=(DatasetPartition.VALIDATION,
+                            DatasetPartition.TEST,
+                            DatasetPartition.ABSTENTION)),
+            counts_test=compute_partition_paired_counts(
+                base_run, trained_run,
+                partitions=(DatasetPartition.TEST,)),
+            family_test_counts=compute_family_paired_counts(
+                base_run, trained_run, partition=DatasetPartition.TEST))
+        reliability = ReliabilitySummary(
+            experiment_id=spec.experiment_id,
+            report_id=written_report.report_id,
+            report_digest=written_report.report_digest,
+            base=compute_parser_statistics(base_run),
+            trained=compute_parser_statistics(trained_run))
+        metrics = extract_primary_metrics(
+            base_run, trained_run, comparison_unconfounded=True)
+        result = build_experiment_result(
+            spec=spec, training=training, checkpoint=checkpoint,
+            evaluations=evaluations, benchmark=benchmark_binding,
+            paired=paired, reliability=reliability, metrics=metrics)
+        written = write_experiment_result(
+            spec=spec, training=training, checkpoint=checkpoint,
+            evaluations=evaluations, benchmark=benchmark_binding,
+            paired=paired, reliability=reliability, result=result,
+            experiments_root=experiments_root)
+        return _E(spec=spec, training=training, checkpoint=checkpoint,
+                  evaluations=evaluations,
+                  benchmark_binding=benchmark_binding, paired=paired,
+                  reliability=reliability, result=result, written=written,
+                  experiments_root=experiments_root, prepared=prepared,
+                  base_run=base_run, trained_run=trained_run,
+                  benchmark=benchmark, success_policy=success_policy,
+                  trainctx=trainctx)
+
+    return _helper
+
+
 # --------------------------------------------------------------------------
 # Gate 5.2: deterministic neighbor-removal lab sim + builder, shared by the
 # unit and failure tiers (tests/ is not a package; shared helpers live here).
