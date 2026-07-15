@@ -58,3 +58,63 @@ def two_router_frr_topology(image_ref: str = "frrouting/frr:v8.4.1") -> Topology
         ),
         images=ImageSpec(frr=image_ref),
     )
+
+
+def two_router_frr_topology_v2(
+    image_ref: str = "frrouting/frr:v8.4.1",
+) -> TopologySpec:
+    """Gate 14 expansion topology variant 2: same approved two-router shape,
+    DIFFERENT network context (AS 65101<->65102, 172.31.0.0/30 link,
+    10.255.1.x loopbacks). A distinct ``topology_hash`` yields distinct stable
+    scenario identities — meaningful context variation, not a text duplicate."""
+    return TopologySpec(
+        name="verifiednet-frr-2r-v2",
+        backend="frr-compose",
+        nodes=(
+            NodeSpec(name="router_a", asn=65101, loopback="10.255.1.1/32"),
+            NodeSpec(name="router_b", asn=65102, loopback="10.255.1.2/32"),
+        ),
+        links=(
+            LinkSpec(
+                a=LinkEndpoint(node="router_a", iface="eth1", ip="172.31.0.1/30"),
+                b=LinkEndpoint(node="router_b", iface="eth1", ip="172.31.0.2/30"),
+            ),
+        ),
+        sessions=(
+            BgpSessionSpec(
+                session_id="a-b",
+                a=SessionEndpoint(node="router_a", peer_ip="172.31.0.2", remote_as=65102),
+                b=SessionEndpoint(node="router_b", peer_ip="172.31.0.1", remote_as=65101),
+            ),
+        ),
+        images=ImageSpec(frr=image_ref),
+    )
+
+
+def two_router_frr_topology_v3(
+    image_ref: str = "frrouting/frr:v8.4.1",
+) -> TopologySpec:
+    """Gate 14 expansion topology variant 3 (AS 64601<->64602, 172.29.0.0/30,
+    10.255.2.x loopbacks). See ``two_router_frr_topology_v2``."""
+    return TopologySpec(
+        name="verifiednet-frr-2r-v3",
+        backend="frr-compose",
+        nodes=(
+            NodeSpec(name="router_a", asn=64601, loopback="10.255.2.1/32"),
+            NodeSpec(name="router_b", asn=64602, loopback="10.255.2.2/32"),
+        ),
+        links=(
+            LinkSpec(
+                a=LinkEndpoint(node="router_a", iface="eth1", ip="172.29.0.1/30"),
+                b=LinkEndpoint(node="router_b", iface="eth1", ip="172.29.0.2/30"),
+            ),
+        ),
+        sessions=(
+            BgpSessionSpec(
+                session_id="a-b",
+                a=SessionEndpoint(node="router_a", peer_ip="172.29.0.2", remote_as=64602),
+                b=SessionEndpoint(node="router_b", peer_ip="172.29.0.1", remote_as=64601),
+            ),
+        ),
+        images=ImageSpec(frr=image_ref),
+    )

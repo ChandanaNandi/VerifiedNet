@@ -41,6 +41,7 @@ implementation is deferred to the mapped future gates — see
 | 0028 | Model weights enter prediction only through a verified immutable checkpoint, behind the feature-only boundary | Accepted |
 | 0029 | Fine-tuning effects require a matched, unconfounded base-versus-trained comparison; wording is governed by a frozen interpretation policy | Accepted |
 | 0030 | Evaluation corpora are registered, versioned, quality-verified artifacts; structured-output reliability is measured evidence, never a parsing change | Accepted |
+| 0031 | Corpus versions are append-only descendants; coverage targets drive new verified scenario generation but never override deterministic splitting | Accepted |
 
 Format for each record: **Status**, **Context**, **Decision**, **Consequences**,
 **References** (to the gate document or source that motivated it).

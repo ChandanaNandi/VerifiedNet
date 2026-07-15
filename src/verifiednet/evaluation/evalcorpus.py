@@ -48,9 +48,13 @@ EVALUATION_CORPUS_GENERATOR = "verifiednet.evaluation.evalcorpus"
 MANIFEST_FILE = "manifest.json"
 COVERAGE_FILE = "coverage.json"
 QUALITY_FILE = "quality.json"
+EXPANSION_FILE = "expansion.json"
 EVALCORPUS_INCOMPLETE_MARKER = ".INCOMPLETE"
+#: Files REQUIRED in every registration (v1-compatible).
 EXPECTED_EVALCORPUS_FILES: frozenset[str] = frozenset(
     {COVERAGE_FILE, QUALITY_FILE})
+#: Files permitted beyond the required set (Gate 14 descendant versions).
+OPTIONAL_EVALCORPUS_FILES: frozenset[str] = frozenset({EXPANSION_FILE})
 
 
 class EvaluationCorpusError(VerifiedNetError):
@@ -307,6 +311,41 @@ def verify_corpus_quality(loaded: LoadedPrepared) -> CorpusQualityResult:
 
 
 # ---------------------------------------------------------------------------
+# Expansion binding (Gate 14 descendant versions)
+# ---------------------------------------------------------------------------
+
+
+class CorpusExpansionBinding(StrictModel):
+    """How a descendant corpus version relates to its parent (Gate 14).
+
+    Corpus versions are APPEND-ONLY descendants: a new version binds its
+    parent's id + digest, the frozen expansion policy and plan that motivated
+    it, and the generation campaign that produced its runs.
+    ``targets_satisfied`` is Literal-locked: a version whose MANDATORY
+    expansion targets are unmet cannot carry a binding at all (and therefore
+    cannot register as an expansion). Advisory findings stay visible.
+    """
+
+    schema_version: Literal[1] = 1
+    parent_corpus_id: str = Field(min_length=1)
+    parent_corpus_digest: str = Field(min_length=1)
+    expansion_policy_id: str = Field(min_length=1)
+    expansion_plan_id: str = Field(min_length=1)
+    campaign_id: str = Field(min_length=1)
+    targets_satisfied: Literal[True] = True
+    target_checks: tuple[DatasetCheck, ...] = Field(min_length=1)
+    advisory_findings: tuple[str, ...] = Field(default_factory=tuple)
+
+    @model_validator(mode="after")
+    def _valid(self) -> CorpusExpansionBinding:
+        if not all(c.passed for c in self.target_checks):
+            raise ValueError(
+                "an expansion binding requires every mandatory target check "
+                "to pass")
+        return self
+
+
+# ---------------------------------------------------------------------------
 # Versioned registration: evaluation-corpora/<evalcorpus-…>/
 # ---------------------------------------------------------------------------
 
@@ -338,8 +377,9 @@ def compute_evaluation_corpus_digest(
     provenance: str,
     generated_by: str,
     files: tuple[DatasetFileHash, ...],
+    expansion: CorpusExpansionBinding | None = None,
 ) -> str:
-    payload = {
+    payload: dict[str, object] = {
         "schema_version": schema_version,
         "corpus_format_version": corpus_format_version,
         "evaluation_corpus_id": evaluation_corpus_id,
@@ -354,6 +394,9 @@ def compute_evaluation_corpus_digest(
             for f in sorted(files, key=lambda f: f.relative_path)
         ],
     }
+    if expansion is not None:
+        # Included ONLY when present, so every v1 digest recomputes unchanged.
+        payload["expansion"] = expansion.model_dump(mode="json")
     return "ecdig-" + sha256_canonical(payload)[:24]
 
 
@@ -371,6 +414,8 @@ class EvaluationCorpusManifest(StrictModel):
     generation_policy: EvaluationCorpusGenerationPolicy
     coverage: CorpusCoverageStats
     quality_verified: Literal[True] = True
+    #: Present ONLY on Gate 14+ descendant versions; None on v1-style roots.
+    expansion: CorpusExpansionBinding | None = None
     generated_by: str = Field(min_length=1)
     files: tuple[DatasetFileHash, ...] = Field(min_length=1)
     evaluation_corpus_id: str = Field(min_length=1)
@@ -385,6 +430,13 @@ class EvaluationCorpusManifest(StrictModel):
         paths = [f.relative_path for f in self.files]
         if paths != sorted(paths) or len(paths) != len(set(paths)):
             raise ValueError("manifest files must be path-sorted and unique")
+        if self.expansion is not None:
+            if self.corpus_version < 2:
+                raise ValueError("an expansion binding requires version >= 2")
+            if self.expansion.parent_corpus_id == self.evaluation_corpus_id:
+                raise ValueError("a corpus version cannot be its own parent")
+            if EXPANSION_FILE not in {f.relative_path for f in self.files}:
+                raise ValueError("an expansion binding requires expansion.json")
         expected_id = derive_evaluation_corpus_id(
             corpus_version=self.corpus_version,
             prepared_digest=self.prepared_digest,
@@ -400,7 +452,7 @@ class EvaluationCorpusManifest(StrictModel):
             prepared_digest=self.prepared_digest,
             generation_policy_id=self.generation_policy.generation_policy_id,
             provenance=self.provenance.value, generated_by=self.generated_by,
-            files=self.files)
+            files=self.files, expansion=self.expansion)
         if self.corpus_digest != expected_digest:
             raise ValueError("corpus_digest does not match the content")
         return self
@@ -421,14 +473,20 @@ def register_evaluation_corpus(
     provenance: CorpusProvenance,
     generation_policy: EvaluationCorpusGenerationPolicy,
     corpora_root: str | Path,
+    expansion: CorpusExpansionBinding | None = None,
 ) -> WrittenEvaluationCorpus:
     """Register a VERIFIED, quality-passing prepared corpus as a version.
 
     Fail-closed: a corpus failing structural quality verification cannot be
     registered; policy/prepared mismatches refuse; existing registrations are
-    never overwritten. The prepared corpus itself is never touched.
+    never overwritten. The prepared corpus itself is never touched. A
+    descendant version (Gate 14) additionally carries an expansion binding —
+    which is constructible ONLY when every mandatory target check passed.
     """
     manifest = loaded.manifest
+    if expansion is not None and corpus_version < 2:
+        raise EvaluationCorpusError(
+            "an expansion binding requires corpus version >= 2")
     if generation_policy.feature_policy_id != manifest.feature_policy_id:
         raise EvaluationCorpusError(
             "generation policy feature_policy_id does not match the corpus")
@@ -445,6 +503,8 @@ def register_evaluation_corpus(
     coverage_payload = canonical_json_bytes(coverage)
     quality_payload = canonical_json_bytes(quality)
     content = {COVERAGE_FILE: coverage_payload, QUALITY_FILE: quality_payload}
+    if expansion is not None:
+        content[EXPANSION_FILE] = canonical_json_bytes(expansion)
     files = tuple(sorted(
         (DatasetFileHash(relative_path=name, sha256=sha256_bytes(payload),
                          size=len(payload))
@@ -461,6 +521,7 @@ def register_evaluation_corpus(
         feature_policy_id=manifest.feature_policy_id,
         label_policy_id=manifest.label_policy_id,
         generation_policy=generation_policy, coverage=coverage,
+        expansion=expansion,
         generated_by=EVALUATION_CORPUS_GENERATOR, files=files,
         evaluation_corpus_id=corpus_id,
         corpus_digest=compute_evaluation_corpus_digest(
@@ -470,7 +531,8 @@ def register_evaluation_corpus(
             prepared_digest=manifest.prepared_digest,
             generation_policy_id=generation_policy.generation_policy_id,
             provenance=provenance.value,
-            generated_by=EVALUATION_CORPUS_GENERATOR, files=files))
+            generated_by=EVALUATION_CORPUS_GENERATOR, files=files,
+            expansion=expansion))
 
     root = Path(corpora_root) / corpus_id
     if root.exists() and any(root.iterdir()):
@@ -537,9 +599,13 @@ def verify_evaluation_corpus(
 
     on_disk = {str(p.relative_to(root)) for p in root.rglob("*")
                if p.is_file() and p.name != EVALCORPUS_INCOMPLETE_MARKER}
-    allowed = EXPECTED_EVALCORPUS_FILES | {MANIFEST_FILE}
-    checks.append(_c("no_missing_files", not sorted(allowed - on_disk)))
+    required = EXPECTED_EVALCORPUS_FILES | {MANIFEST_FILE}
+    allowed = required | OPTIONAL_EVALCORPUS_FILES
+    checks.append(_c("no_missing_files", not sorted(required - on_disk)))
     checks.append(_c("no_unexpected_files", not sorted(on_disk - allowed)))
+    checks.append(_c(
+        "expansion_file_matches_manifest",
+        (EXPANSION_FILE in on_disk) == (manifest.expansion is not None)))
 
     hash_ok, detail = True, ""
     for fh in manifest.files:
@@ -560,11 +626,15 @@ def verify_evaluation_corpus(
                 (root / COVERAGE_FILE).read_bytes())
             quality = CorpusQualityResult.model_validate_json(
                 (root / QUALITY_FILE).read_bytes())
+            expansion = (CorpusExpansionBinding.model_validate_json(
+                (root / EXPANSION_FILE).read_bytes())
+                if (root / EXPANSION_FILE).is_file() else None)
         except ValidationError:
             embed_ok = False
         else:
             embed_ok = (coverage == manifest.coverage
-                        and quality.verified is True)
+                        and quality.verified is True
+                        and expansion == manifest.expansion)
     checks.append(_c("embedded_reports_consistent", embed_ok))
 
     return EvaluationCorpusVerificationResult(

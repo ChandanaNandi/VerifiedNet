@@ -126,6 +126,13 @@ artifacts with explicit provenance and an eligible-test-example count
 categories with per-run compliance statistics in a separate structured-output
 report. See `../gate13/evaluation-corpus.md`.
 
+**Update (Gate 14):** the eligible-test shortfall is being closed through
+append-only corpus versions: v2 carries 22 eligible test / 18 validation
+examples from 30 stable identities across three approved topology variants —
+still below this gate's 30-example directional threshold, and said so in the
+registered coverage artifact (ADR-0031). See
+`../gate14/corpus-expansion.md`.
+
 ## 9. Explicitly out of scope
 
 No further training, prompt optimization, corpus expansion, checkpoint

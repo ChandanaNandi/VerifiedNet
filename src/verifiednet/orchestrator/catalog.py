@@ -218,9 +218,33 @@ SCENARIO_CATALOG: tuple[ScenarioCase, ...] = (
 )
 
 
+#: Gate 14 corpus-expansion additions — approved, bounded, hand-maintained.
+#: Kept SEPARATE from ``SCENARIO_CATALOG`` because the per-topology PF cases
+#: validate against their own approved topology VARIANT (the prefix must be
+#: the target's advertised loopback in that variant), not the default v1
+#: topology. ``ras-alt2`` adds a fourth valid wrong-ASN orientation (64700
+#: collides with no approved topology ASN).
+EXPANSION_SCENARIO_CATALOG: tuple[ScenarioCase, ...] = (
+    _remote_as_case("ras-alt2", "router_b", 64700,
+                    "expansion: fourth wrong-ASN orientation on router_b"),
+    _param_case("pf-t2-ref", "bgp_prefix_withdrawal", "bgp", "router_a",
+                "expansion: withdraw 10.255.1.1/32 on 2r-v2",
+                {"prefix": "10.255.1.1/32"}),
+    _param_case("pf-t2-rev", "bgp_prefix_withdrawal", "bgp", "router_b",
+                "expansion: withdraw 10.255.1.2/32 on 2r-v2",
+                {"prefix": "10.255.1.2/32"}),
+    _param_case("pf-t3-ref", "bgp_prefix_withdrawal", "bgp", "router_a",
+                "expansion: withdraw 10.255.2.1/32 on 2r-v3",
+                {"prefix": "10.255.2.1/32"}),
+    _param_case("pf-t3-rev", "bgp_prefix_withdrawal", "bgp", "router_b",
+                "expansion: withdraw 10.255.2.2/32 on 2r-v3",
+                {"prefix": "10.255.2.2/32"}),
+)
+
+
 def _build_case_index() -> dict[str, ScenarioCase]:
     index: dict[str, ScenarioCase] = {}
-    for case in SCENARIO_CATALOG:
+    for case in SCENARIO_CATALOG + EXPANSION_SCENARIO_CATALOG:
         if case.case_id in index:
             raise ValueError(f"duplicate case_id in catalog: {case.case_id!r}")
         index[case.case_id] = case

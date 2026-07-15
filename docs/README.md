@@ -225,6 +225,20 @@ byte-unchanged. The first project-persisted corpus (all 9 catalog cases ×2 +
 4 rejections) registers via the gated integration path. **No training, prompt
 optimization, RAG, or agents exist.** See
 `architecture/gate13/evaluation-corpus.md`.
+Gate 14 (evaluation corpus expansion to v2) is implemented with ADR-0031:
+corpus versions become APPEND-ONLY descendants (parent id+digest binding,
+frozen expansion policy with explicit mandatory-versus-advisory targets, an
+immutable generation-campaign record, and a model-metric-free v1-versus-v2
+comparison artifact); coverage deficits drive NEW verified scenario
+identities — three approved topology variants and five approved catalog
+additions yield a 30-identity partition-blind matrix whose splits the planner
+predicts with the EXACT production splitter (verified after projection) and
+may never override; unmet mandatory targets make a v2 registration
+structurally impossible; v1 and every training artifact remain
+byte-identical, and no model loads anywhere. The full campaign (156 accepted
++ 12 rejected runs) registers project corpus v2 via the gated operational
+path. **No retraining, evaluation, benchmarking, or prompt change.** See
+`architecture/gate14/corpus-expansion.md`.
 Layers beyond are **planned, not
 implemented** — no prompt optimization, RAG,
 GraphRAG, agent, memory, or persistent workflow exists yet. The deterministic

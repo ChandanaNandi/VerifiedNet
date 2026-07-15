@@ -104,6 +104,13 @@ build-twice byte-identical registrations and reports; source immutability
 and no-network across registration and reporting; Gate 13 artifacts rejected
 as training inputs; and the unchanged-Gate-8-parser contract test.
 
+**Update (Gate 14):** the registration store gained backward-compatible
+descendant-version support — an optional `expansion` binding (parent id +
+digest, policy/plan/campaign ids, Literal-locked target satisfaction) and an
+optional `expansion.json` file; every v1 artifact verifies unchanged. Corpus
+v2 was registered through it (ADR-0031). See
+`../gate14/corpus-expansion.md`.
+
 ## 7. Explicitly out of scope
 
 No larger-scale fine-tuning, no evaluation-engine change, no ranking change,

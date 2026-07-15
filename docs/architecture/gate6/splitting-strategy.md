@@ -90,3 +90,13 @@ holdout challenge set is only meaningful once more families/topologies exist.
 Gate 6 v1 therefore proves the SPLITTING MACHINERY is correct, deterministic,
 and leakage-safe — it does not claim a statistically adequate benchmark. The
 same machinery scales unchanged as the verified library grows.
+
+
+**Update (Gate 14):** the split policy defined here (salt `gate6`, 80/10/10
+integer buckets, group-cohesive assignment) remains byte-unchanged through
+the corpus-expansion gate. Coverage targets may drive NEW stable scenario
+identities (whose groups the unchanged splitter places deterministically) but
+may never override an assignment, move an example, or vary the salt/ratios —
+ADR-0031. The Gate 14 planner predicts a fully-defined identity's partition
+with this exact production splitter and verifies the prediction after
+projection. See `../gate14/corpus-expansion.md`.

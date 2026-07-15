@@ -343,15 +343,17 @@ def write_inputs() -> Callable[..., object]:
 REJECT_IMPOSSIBLE_PREFIX = "203.0.113.99/32"
 
 
-def make_rejected_prefix_scenario() -> ScenarioDefinition:
+def make_rejected_prefix_scenario(
+    scenario_suffix: str = "2r-0001", target_node: str = "router_a",
+) -> ScenarioDefinition:
     return ScenarioDefinition(
-        scenario_id="bgp-prefix-withdrawal-reject-2r-0001",
+        scenario_id=f"bgp-prefix-withdrawal-reject-{scenario_suffix}",
         family="bgp",
         template_id="bgp_prefix_withdrawal",
         version=1,
         parameters={
             "target_prefix": REJECT_IMPOSSIBLE_PREFIX,
-            "target_node": "router_a",
+            "target_node": target_node,
             "target_session": "a-b",
         },
         timeouts=ScenarioTimeouts(
@@ -361,8 +363,16 @@ def make_rejected_prefix_scenario() -> ScenarioDefinition:
     )
 
 
-def build_rejected_prefix_inputs(run_id: str = "run-rej-prefix") -> RunInputs:
-    """A precondition-rejected run for an impossible target prefix (distinct id)."""
+def build_rejected_variant_inputs(
+    run_id: str, *, scenario_suffix: str = "2r-0001",
+    target_node: str = "router_a", topology=None,
+) -> RunInputs:
+    """A precondition-rejected run with a parameterizable STABLE identity.
+
+    Gate 14: distinct scenario suffixes, target orientations, and topology
+    contexts yield distinct abstention leakage groups through the exact same
+    honest rejected contract (precondition phase only — the sole rejected
+    subtype the Gate 6 projection supports)."""
     from verifiednet.common.hashing import sha256_canonical
     from verifiednet.incidents.builder import build_rejected_record
     from verifiednet.schemas import (
@@ -375,15 +385,16 @@ def build_rejected_prefix_inputs(run_id: str = "run-rej-prefix") -> RunInputs:
     )
 
     rc = RunContext(run_id, clock=lambda: EPOCH)
-    topo = make_two_router_topology()
-    scen = make_rejected_prefix_scenario()
+    topo = topology or make_two_router_topology()
+    scen = make_rejected_prefix_scenario(scenario_suffix, target_node)
     baseline = _evidence_bundle(
-        rc, Phase.PRECONDITION, "router_a",
+        rc, Phase.PRECONDITION, target_node,
         {f"route.{REJECT_IMPOSSIBLE_PREFIX}.present": "false"},
     )
     ev_id = baseline.records[0].evidence_id
     vr = VerificationResult(
-        check_id=f"route_present:router_a:route.{REJECT_IMPOSSIBLE_PREFIX}.present:precondition",
+        check_id=(f"route_present:{target_node}:"
+                  f"route.{REJECT_IMPOSSIBLE_PREFIX}.present:precondition"),
         verdict=Verdict.FAIL, phase="precondition", evidence_ids=(ev_id,),
         observed=("false",), evaluated_at_seq=rc.next_seq(), evaluated_at=EPOCH,
     )
@@ -391,7 +402,8 @@ def build_rejected_prefix_inputs(run_id: str = "run-rej-prefix") -> RunInputs:
     incident = build_rejected_record(
         run_ctx=rc, scenario=scen, topology=topo, baseline=baseline,
         rejection_code=RejectionCode.PRECONDITION_FAILED,
-        details=f"required prefix {REJECT_IMPOSSIBLE_PREFIX} was absent on router_a",
+        details=(f"required prefix {REJECT_IMPOSSIBLE_PREFIX} was absent on "
+                 f"{target_node}"),
         failed_phase="precondition", precondition_results=(vr,), provenance=prov,
         completed_phases=(), cleanup_status="clean",
     )
@@ -401,6 +413,11 @@ def build_rejected_prefix_inputs(run_id: str = "run-rej-prefix") -> RunInputs:
         acceptance_status="rejected",
     )
     return RunInputs(rm, _env_manifest(), incident, (), ())
+
+
+def build_rejected_prefix_inputs(run_id: str = "run-rej-prefix") -> RunInputs:
+    """A precondition-rejected run for an impossible target prefix (distinct id)."""
+    return build_rejected_variant_inputs(run_id)
 
 
 def write_and_index_run(inputs: RunInputs, out_root: object) -> object:
@@ -464,11 +481,22 @@ def export_corpus() -> Callable[..., object]:
             def sleep(self, s: float) -> None:
                 self.t += s
 
-        for case_id, run_id in accepted:
-            run_catalog_case_offline(case_by_id(case_id), out_root, tmp_path,
-                                     run_id=run_id, sim=CatalogLabSim())
-        for run_id in rejected:
-            write_and_index_run(build_rejected_prefix_inputs(run_id), out_root)
+        for entry in accepted:
+            if len(entry) == 2:  # legacy: (case_id, run_id) on the v1 topology
+                run_catalog_case_offline(case_by_id(entry[0]), out_root,
+                                         tmp_path, run_id=entry[1])
+            else:  # Gate 14: (ScenarioCase, TopologySpec, run_id)
+                case, topo, run_id = entry
+                run_catalog_case_offline(case, out_root, tmp_path,
+                                         run_id=run_id, topology=topo)
+        for rej in rejected:
+            if isinstance(rej, str):  # legacy: default rejected identity
+                write_and_index_run(build_rejected_prefix_inputs(rej), out_root)
+            else:  # Gate 14: (run_id, scenario_suffix, target_node, topology)
+                run_id, suffix, target, topo = rej
+                write_and_index_run(build_rejected_variant_inputs(
+                    run_id, scenario_suffix=suffix, target_node=target,
+                    topology=topo), out_root)
 
         examples = [project_verified_run(d) for d in discover_verified_runs(out_root)]
         pol = policy or SplitPolicy(salt="gate6", train_buckets=8000,
@@ -517,11 +545,22 @@ def separated_pipeline() -> Callable[..., object]:
 
     def _helper(tmp_path, *, accepted, rejected=(), policy=None):
         out_root = tmp_path / "runs"
-        for case_id, run_id in accepted:
-            run_catalog_case_offline(case_by_id(case_id), out_root, tmp_path,
-                                     run_id=run_id, sim=CatalogLabSim())
-        for run_id in rejected:
-            write_and_index_run(build_rejected_prefix_inputs(run_id), out_root)
+        for entry in accepted:
+            if len(entry) == 2:  # legacy: (case_id, run_id) on the v1 topology
+                run_catalog_case_offline(case_by_id(entry[0]), out_root,
+                                         tmp_path, run_id=entry[1])
+            else:  # Gate 14: (ScenarioCase, TopologySpec, run_id)
+                case, topo, run_id = entry
+                run_catalog_case_offline(case, out_root, tmp_path,
+                                         run_id=run_id, topology=topo)
+        for rej in rejected:
+            if isinstance(rej, str):  # legacy: default rejected identity
+                write_and_index_run(build_rejected_prefix_inputs(rej), out_root)
+            else:  # Gate 14: (run_id, scenario_suffix, target_node, topology)
+                run_id, suffix, target, topo = rej
+                write_and_index_run(build_rejected_variant_inputs(
+                    run_id, scenario_suffix=suffix, target_node=target,
+                    topology=topo), out_root)
 
         examples = [project_verified_run(d) for d in discover_verified_runs(out_root)]
         pol = policy or SplitPolicy(salt="gate6", train_buckets=8000,
@@ -1141,6 +1180,59 @@ def matched_pair_pipeline(eval_pipeline, ckpt_predictor_pipeline) -> Callable[..
     return _helper
 
 
+def expansion_run_entries(*, runs_cap: int | None = None):
+    """The Gate 14 campaign's run entries: (accepted, rejected) for the chain.
+
+    ``runs_cap`` limits runs-per-identity for FAST offline tests; the full
+    campaign uses each candidate's planned run count. Selection is the
+    COMPLETE matrix either way — never filtered by (predicted) partition.
+    """
+    from verifiednet.orchestrator.expansion import (
+        GATE14_REJECTED_RUNS_PER_IDENTITY,
+        GATE14_REJECTED_TARGETS,
+        build_expansion_matrix,
+        expansion_topology,
+    )
+
+    accepted = []
+    for spec in build_expansion_matrix():
+        topo = expansion_topology(spec.topology_id)
+        runs = spec.planned_runs if runs_cap is None \
+            else min(spec.planned_runs, runs_cap)
+        for i in range(1, runs + 1):
+            accepted.append((spec.case, topo,
+                             f"run-{spec.topology_id}-{spec.case.case_id}-{i}"))
+    rejected = []
+    for topology_id in ("2r-v1", "2r-v2", "2r-v3"):
+        topo = expansion_topology(topology_id)
+        for target in GATE14_REJECTED_TARGETS:
+            node_tag = target.removeprefix("router_")
+            runs = GATE14_REJECTED_RUNS_PER_IDENTITY if runs_cap is None \
+                else min(GATE14_REJECTED_RUNS_PER_IDENTITY, runs_cap)
+            for i in range(1, runs + 1):
+                rejected.append((f"run-rej-{topology_id}-{node_tag}-{i}",
+                                 f"{topology_id}-{node_tag}", target, topo))
+    return accepted, rejected
+
+
+@pytest.fixture
+def expansion_entries() -> Callable[..., object]:
+    """The Gate 14 run-entry builder, exposed as a fixture (any conftest scope)."""
+    return expansion_run_entries
+
+
+@pytest.fixture
+def expansion_corpus_pipeline(eval_pipeline) -> Callable[..., object]:
+    """Gate 14 chain: the full (or capped) expansion campaign -> prepared corpus."""
+
+    def _helper(tmp_path, *, runs_cap: int | None = None):
+        accepted, rejected = expansion_run_entries(runs_cap=runs_cap)
+        ctx = eval_pipeline(tmp_path, accepted=accepted, rejected=rejected)
+        return ctx, accepted, rejected
+
+    return _helper
+
+
 # --------------------------------------------------------------------------
 # Gate 5.2: deterministic neighbor-removal lab sim + builder, shared by the
 # unit and failure tiers (tests/ is not a package; shared helpers live here).
@@ -1680,11 +1772,30 @@ _CATALOG_NODES = {
 }
 
 
+def catalog_node_facts(topology) -> dict:
+    """Derive the simulator's node facts from a TopologySpec (Gate 14).
+
+    Keeps the simulator honest for topology VARIANTS: the same object that the
+    orchestrator validates and hashes also drives the simulated evidence."""
+    by_name = {n.name: n for n in topology.nodes}
+    session = topology.sessions[0]
+    endpoints = {session.a.node: session.a, session.b.node: session.b}
+    names = sorted(by_name)
+    facts: dict = {}
+    for name, node in by_name.items():
+        endpoint = endpoints[name]
+        peer = next(n for n in names if n != name)
+        facts[name] = {"asn": node.asn, "loopback": node.loopback,
+                       "peer_ip": endpoint.peer_ip,
+                       "correct_remote_as": endpoint.remote_as,
+                       "peer": peer, "peer_loopback": by_name[peer].loopback}
+    return facts
+
+
 class _CatNodeState:
-    def __init__(self, name: str) -> None:
-        facts = _CATALOG_NODES[name]
+    def __init__(self, name: str, facts: dict) -> None:
         self.name = name
-        self.remote_as = int(facts["correct_remote_as"])
+        self.remote_as = int(facts[name]["correct_remote_as"])
         self.has_neighbor = True
         self.eth1_up = True
         self.advertised = True
@@ -1693,9 +1804,10 @@ class _CatNodeState:
 class CatalogLabSim:
     """Symmetric Docker+FRR simulator: both routers carry independent state."""
 
-    def __init__(self) -> None:
-        self.a = _CatNodeState("router_a")
-        self.b = _CatNodeState("router_b")
+    def __init__(self, facts: dict | None = None) -> None:
+        self._facts = facts or _CATALOG_NODES
+        self.a = _CatNodeState("router_a", self._facts)
+        self.b = _CatNodeState("router_b", self._facts)
         self._up = False
         self.mutation_targets: list[str] = []
 
@@ -1707,8 +1819,8 @@ class CatalogLabSim:
         return (
             self.a.eth1_up and self.b.eth1_up
             and self.a.has_neighbor and self.b.has_neighbor
-            and self.a.remote_as == _CATALOG_NODES["router_a"]["correct_remote_as"]
-            and self.b.remote_as == _CATALOG_NODES["router_b"]["correct_remote_as"]
+            and self.a.remote_as == self._facts["router_a"]["correct_remote_as"]
+            and self.b.remote_as == self._facts["router_b"]["correct_remote_as"]
         )
 
     def _ps(self) -> str:
@@ -1718,7 +1830,7 @@ class CatalogLabSim:
 
     def _bgp_summary(self, node: str) -> str:
         st = self._state(node)
-        facts = _CATALOG_NODES[node]
+        facts = self._facts[node]
         if not st.has_neighbor:
             return _json2.dumps({})
         state = "Established" if self._session_up else "Active"
@@ -1734,7 +1846,7 @@ class CatalogLabSim:
                             "lo": {"administrativeStatus": "up", "operationalStatus": "up"}})
 
     def _routes(self, node: str) -> str:
-        facts = _CATALOG_NODES[node]
+        facts = self._facts[node]
         peer = self._state(facts["peer"])
         table = {facts["loopback"]: [{"protocol": "connected"}]}
         if self._session_up and peer.advertised:
@@ -1743,7 +1855,7 @@ class CatalogLabSim:
 
     def _running_config(self, node: str) -> str:
         st = self._state(node)
-        facts = _CATALOG_NODES[node]
+        facts = self._facts[node]
         lines = [f"hostname {node}", "interface eth1", f" ip address {facts['peer_ip']}/30-face"]
         if not st.eth1_up:
             lines.append(" shutdown")
@@ -1767,7 +1879,7 @@ class CatalogLabSim:
 
         if logical and logical[0] == "ping":
             st = self._state(node)
-            peer = self._state(_CATALOG_NODES[node]["peer"])
+            peer = self._state(self._facts[node]["peer"])
             ok = st.eth1_up and peer.eth1_up
             return RawResult(0 if ok else 1, "1 received" if ok else "0 received", "",
                              False, False, False)
@@ -1833,11 +1945,17 @@ def _catalog_epoch():
     return datetime(2025, 1, 1, tzinfo=UTC)
 
 
-def run_catalog_case_offline(case, out_root, tmp_path, run_id=None, sim=None):
-    """Run one ScenarioCase through run_accepted_case with a fresh CatalogLabSim."""
+def run_catalog_case_offline(case, out_root, tmp_path, run_id=None, sim=None,
+                             topology=None):
+    """Run one ScenarioCase through run_accepted_case with a fresh CatalogLabSim.
+
+    Gate 14: an explicit ``topology`` runs the case in that network context
+    (the simulator derives its facts from the SAME spec the run validates and
+    hashes); the default remains the approved v1 two-router topology."""
     from verifiednet.orchestrator import run_accepted_case
 
     rid = run_id or f"run-{case.case_id}"
+    topo = topology or two_router_frr_topology()
 
     class _Clk:
         def __init__(self): self.t = 0.0
@@ -1848,9 +1966,10 @@ def run_catalog_case_offline(case, out_root, tmp_path, run_id=None, sim=None):
     return run_accepted_case(
         case=case, out_root=out_root, work_dir=tmp_path / rid,
         run_ctx=RunContext(rid, clock=_catalog_epoch),
-        topology=two_router_frr_topology(),
+        topology=topo,
         git_rev=CATALOG_GIT_REV, lock_hash=CATALOG_LOCK_HASH,
-        runner=sim or CatalogLabSim(), monotonic=clk.monotonic, sleep=clk.sleep,
+        runner=sim or CatalogLabSim(facts=catalog_node_facts(topo)),
+        monotonic=clk.monotonic, sleep=clk.sleep,
         convergence_timeout_s=5.0,
     )
 
