@@ -295,6 +295,24 @@ this gate — Gate 16B (the second preregistered one-run experiment) is
 deliberately unstarted. **No prompt, parser, scoring, ranking, comparison,
 objective, eligibility, or success-policy change.** See
 `architecture/gate16/contract-aligned-serialization.md`.
+Gate 16B (contract-aligned conditioning experiment) is the second
+preregistered one-run experiment (ADR-0033) and changes exactly ONE variable
+from Gate 15 — the training input is rendered with the Gate 16A v2 template
+(byte-identical to the deployed Gate 8 prompt) instead of v1; targets,
+sources, model, budget, objective, prompt, parser, and the whole Gate
+7/9/12/13 measurement stack are held identical. It required NO production
+change: the v2 binding is expressed through the existing spec's
+training-corpus-policy id and corpus id/digest. The capped v1 and v2 corpora
+select the exact same ordered 64 sources with byte-identical targets (proven
+offline and on the real v3 chain); the treatment checkpoint trains FRESH from
+the pinned base (no warm start; lineage forbids a parent); exactly one run
+and one checkpoint; the frozen success policy `esucc-ab21b8d6e2ab7a70`
+governs the outcome and a validity gain without an accuracy gain is `mixed`,
+never `improved`. The Gate 10F.1 / Gate 15 checkpoints and base model are
+fingerprinted immutable. **No prompt, parser, scoring, ranking, target,
+objective, or success-policy change; no warm start, second run, larger
+budget, LoRA, RAG, agents, deployment, or publication.** See
+`architecture/gate16/contract-aligned-conditioning-experiment.md`.
 Layers beyond are **planned, not
 implemented** — no prompt optimization, RAG,
 GraphRAG, agent, memory, or persistent workflow exists yet. The deterministic

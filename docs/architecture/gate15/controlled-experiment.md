@@ -171,3 +171,11 @@ Gate 16A adds the contract-aligned training-input template v2 (byte-identical
 to the deployed prompt, ADR-0034) as the single isolated variable for the
 next preregistered experiment (see
 `../gate16/contract-aligned-serialization.md`).
+
+## Gate 16B note
+
+Gate 16B re-runs this exact experiment shape with ONE variable changed — the
+Gate 16A contract-aligned v2 training input in place of v1 — reusing this
+gate's spec, store, success policy, and measurement stack verbatim
+(ADR-0033/0034). See
+`../gate16/contract-aligned-conditioning-experiment.md`.

@@ -1392,6 +1392,58 @@ def gate15_fixture_entries():
     return accepted, ["run-rej"]
 
 
+def gate16_capped_corpora(prepared, *, max_example_count):
+    """Build the v1 and v2 train-only corpora from ONE prepared corpus and
+    apply the same first-N canonical cap. Returns (v1_corpus, v2_corpus).
+
+    The ONLY intended difference between the two is the input-template
+    version (Gate 16A v1 vs contract-aligned v2); eligibility, target
+    template, cap, and source selection are identical — this helper is the
+    shared substrate for the Gate 16B same-source and binding proofs.
+    """
+    from verifiednet.evaluation import diagnosis_task
+    from verifiednet.experiment import cap_training_corpus
+    from verifiednet.training import (
+        build_training_corpus,
+        contract_aligned_input_template,
+        contract_aligned_training_policy,
+        diagnosis_input_template,
+        diagnosis_target_template,
+        diagnosis_training_policy,
+    )
+
+    task_id = diagnosis_task().task_id
+    feature_policy_id = prepared.manifest.feature_policy_id
+    target = diagnosis_target_template(task_id=task_id)
+
+    v1_template = diagnosis_input_template(
+        task_id=task_id, feature_policy_id=feature_policy_id)
+    v1 = cap_training_corpus(build_training_corpus(
+        prepared,
+        training_data_policy=diagnosis_training_policy(
+            task_id=task_id, input_template=v1_template,
+            target_template=target),
+        input_template=v1_template, target_template=target),
+        max_example_count=max_example_count)
+
+    v2_template = contract_aligned_input_template(
+        task_id=task_id, feature_policy_id=feature_policy_id)
+    v2 = cap_training_corpus(build_training_corpus(
+        prepared,
+        training_data_policy=contract_aligned_training_policy(
+            task_id=task_id, input_template=v2_template,
+            target_template=target),
+        input_template=v2_template, target_template=target),
+        max_example_count=max_example_count)
+    return v1, v2
+
+
+@pytest.fixture
+def gate16_corpora() -> Callable[..., object]:
+    """The Gate 16B v1/v2 capped-corpus builder, exposed as a fixture."""
+    return gate16_capped_corpora
+
+
 @pytest.fixture
 def experiment_pipeline(realtrain_pipeline) -> Callable[..., object]:
     """Gate 15 offline chain: stub-trained checkpoint + four deterministic

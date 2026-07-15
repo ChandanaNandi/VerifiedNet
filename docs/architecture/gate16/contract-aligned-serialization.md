@@ -103,3 +103,11 @@ CPU fine-tune, matched evaluation on registered corpus v3 through the
 unchanged Gate 7/9/12/13 machinery, and a frozen-policy outcome — requires
 its own approval and begins only after the token-length proof has passed on
 the authoritative machine.
+
+## Gate 16B note
+
+Gate 16B consumes this contract as the single independent variable of a
+second preregistered one-run experiment (ADR-0033): the v2 template is bound
+into a Gate 15-shaped experiment with NO production change, evaluated on
+registered corpus v3 through the unchanged measurement stack. See
+`contract-aligned-conditioning-experiment.md`.
