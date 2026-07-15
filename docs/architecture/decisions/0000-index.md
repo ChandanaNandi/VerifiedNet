@@ -40,6 +40,7 @@ implementation is deferred to the mapped future gates — see
 | 0027 | Real executions are structurally verified, never replay-reconstructed; checkpoints require verified authorization + completed execution | Accepted |
 | 0028 | Model weights enter prediction only through a verified immutable checkpoint, behind the feature-only boundary | Accepted |
 | 0029 | Fine-tuning effects require a matched, unconfounded base-versus-trained comparison; wording is governed by a frozen interpretation policy | Accepted |
+| 0030 | Evaluation corpora are registered, versioned, quality-verified artifacts; structured-output reliability is measured evidence, never a parsing change | Accepted |
 
 Format for each record: **Status**, **Context**, **Decision**, **Consequences**,
 **References** (to the gate document or source that motivated it).

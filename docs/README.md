@@ -209,6 +209,22 @@ changes → no observed effect, regressions always surfaced) persist as an
 immutable content-addressed `comparisons/<cmp-…>/` artifact. Measurement
 never feeds training. **No further training, prompt optimization, deployment,
 RAG, or agents exist.** See `architecture/gate12/checkpoint-benchmark.md`.
+Gate 13 (persisted evaluation corpus + structured-output reliability) is
+implemented with ADR-0030: evaluation corpora become REGISTERED, versioned,
+content-addressed artifacts (`evaluation-corpora/<evalcorpus-…>/`) with
+explicit provenance, a source-Literal-locked generation policy, deterministic
+coverage statistics (including the eligible-test-example count), and
+fail-closed structural quality verification (duplicates, split leakage,
+malformed examples, missing evidence; imbalance reported, never rebalanced);
+invalid model output is deterministically categorized (prose-wrapped JSON,
+degenerate repetition, truncation, schema violations, backend failures) with
+per-run parser statistics and a MEASURED prompt-compliance rate, persisted as
+a separate immutable structured-output report keyed to each benchmark — the
+Gate 8 parser, prompts, Gate 7 scoring, and Gate 9 ranking are all
+byte-unchanged. The first project-persisted corpus (all 9 catalog cases ×2 +
+4 rejections) registers via the gated integration path. **No training, prompt
+optimization, RAG, or agents exist.** See
+`architecture/gate13/evaluation-corpus.md`.
 Layers beyond are **planned, not
 implemented** — no prompt optimization, RAG,
 GraphRAG, agent, memory, or persistent workflow exists yet. The deterministic

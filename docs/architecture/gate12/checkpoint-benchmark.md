@@ -119,6 +119,13 @@ integration test gated on `VERIFIEDNET_RUN_REAL_GATE12=1` +
 `VERIFIEDNET_REAL_CHECKPOINT_DIR` + `VERIFIEDNET_BASE_MODEL_DIR` + the
 `training-hf` extras, asserting structural consistency only.
 
+**Update (Gate 13):** the two weaknesses this gate exposed are now measured
+foundations — evaluation corpora are registered, versioned, quality-verified
+artifacts with explicit provenance and an eligible-test-example count
+(ADR-0030), and the real predictors' JSON failures are named deterministic
+categories with per-run compliance statistics in a separate structured-output
+report. See `../gate13/evaluation-corpus.md`.
+
 ## 9. Explicitly out of scope
 
 No further training, prompt optimization, corpus expansion, checkpoint
