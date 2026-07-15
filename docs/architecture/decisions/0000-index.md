@@ -44,6 +44,7 @@ implementation is deferred to the mapped future gates — see
 | 0031 | Corpus versions are append-only descendants; coverage targets drive new verified scenario generation but never override deterministic splitting | Accepted |
 | 0032 | Experiment readiness is determined by independent held-out identity coverage, not raw row count alone | Accepted |
 | 0033 | Model-quality experiments are preregistered, one-run, one-checkpoint, and interpreted by a frozen success policy behind a test-set firewall | Accepted |
+| 0034 | Training may mirror the deployed public prompt contract, but production training code never imports evaluation; byte equality is enforced across layers by contract tests | Accepted |
 
 Format for each record: **Status**, **Context**, **Decision**, **Consequences**,
 **References** (to the gate document or source that motivated it).

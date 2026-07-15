@@ -126,3 +126,12 @@ was extracted into shared module-level functions (`parse_backend_response`,
 (behavior and all derived ids unchanged), and `VerifiedCheckpointPredictor`
 reuses them together with this document's prompt template, normalization, and
 prediction union. See `../gate11/checkpoint-predictor.md` and ADR-0028.
+
+## Gate 16A note
+
+The prompt template defined here remains the single source of truth for the
+deployed inference contract. Gate 16A's training-input template v2 MIRRORS
+its public instruction and response-schema sentences (mirrored constants in
+the training layer, never shared code or an import); cross-layer contract
+tests enforce byte equality, so any change to this prompt fails CI until the
+mirror is deliberately revised (ADR-0034).

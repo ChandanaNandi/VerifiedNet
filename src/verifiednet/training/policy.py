@@ -58,6 +58,34 @@ _TARGET_SCHEMA_DESCRIPTION = (
     '"prediction_type": "diagnosis"} with keys sorted and no whitespace.'
 )
 
+#: Gate 16A — the MIRRORED deployed-inference contract text (ADR-0034).
+#: These two constants restate, verbatim, the frozen Gate 8 prompt's public
+#: instruction and response-schema sentences so that training-input v2 renders
+#: byte-identically to the deployed prompt WITHOUT importing
+#: ``verifiednet.evaluation`` (ADR-0022 unchanged). They are a mirrored
+#: contract, never shared code; cross-layer byte-equality is enforced by
+#: contract tests in ``tests/`` (where importing both layers is legal), so any
+#: drift between the mirror and the prompt fails CI loudly. The v2 model
+#: validator additionally locks a v2 template to EXACTLY this text — a drifted
+#: v2 template is unrepresentable, not merely untested.
+CONTRACT_ALIGNED_TEMPLATE_VERSION: Literal[2] = 2
+CONTRACT_ALIGNED_TEMPLATE_NAME = "contract_aligned_fault_diagnosis"
+
+_CONTRACT_INSTRUCTIONS = (
+    "You are a deterministic network fault-diagnosis classifier. You are given "
+    "only observation metadata about one verified network run. Decide whether a "
+    "fault occurred and, if so, which fault family it belongs to. You must choose "
+    "a fault family strictly from the candidate list, or abstain."
+)
+
+_CONTRACT_RESPONSE_SCHEMA = (
+    'Respond with ONE JSON object and nothing else: '
+    '{"prediction_type": "diagnosis" | "abstention", '
+    '"fault_family": <one of the candidate families, required iff diagnosis>, '
+    '"confidence": "low" | "medium" | "high"}. '
+    'If there is no fault to diagnose, use prediction_type "abstention".'
+)
+
 
 def derive_training_data_policy_id(
     *,
@@ -136,7 +164,9 @@ class TrainingInputTemplate(StrictModel):
     """
 
     schema_version: Literal[1] = 1
-    template_version: Literal[1] = 1
+    #: 1 = Gate 10A serialization (byte-frozen); 2 = Gate 16A contract-aligned
+    #: serialization (byte-identical to the deployed Gate 8 prompt rendering).
+    template_version: Literal[1, 2] = 1
     name: str = Field(min_length=1)
     instructions: str = Field(min_length=1)
     candidate_families: tuple[str, ...] = Field(min_length=1)
@@ -150,6 +180,20 @@ class TrainingInputTemplate(StrictModel):
             raise ValueError("candidate_families must be sorted")
         if len(set(self.candidate_families)) != len(self.candidate_families):
             raise ValueError("candidate_families must be unique")
+        if self.template_version == CONTRACT_ALIGNED_TEMPLATE_VERSION:
+            # v2 text is LOCKED to the mirrored deployed contract — arbitrary
+            # prompt-text injection through a v2 template is unrepresentable.
+            if self.instructions != _CONTRACT_INSTRUCTIONS:
+                raise ValueError(
+                    "a v2 template must carry exactly the mirrored deployed "
+                    "instruction text")
+            if self.name != CONTRACT_ALIGNED_TEMPLATE_NAME:
+                raise ValueError(
+                    "a v2 template must carry the contract-aligned name")
+            if self.candidate_families != TRAINING_CANDIDATE_FAMILIES:
+                raise ValueError(
+                    "a v2 template must carry exactly the approved candidate "
+                    "class space")
         expected = derive_input_template_id(
             schema_version=self.schema_version, template_version=self.template_version,
             name=self.name, instructions=self.instructions,
@@ -161,9 +205,17 @@ class TrainingInputTemplate(StrictModel):
         return self
 
     def render(self, features: DatasetFeatures) -> str:
-        """Deterministically render the model input from features ONLY."""
+        """Deterministically render the model input from features ONLY.
+
+        v1 renders the byte-frozen Gate 10A serialization; v2 renders the
+        deployed Gate 8 prompt serialization (same observation block, the
+        mirrored instruction sentence, and the mirrored response-schema
+        sentence in place of the v1 ``Output:`` line).
+        """
         candidates = ", ".join(self.candidate_families)
         onset = "present" if features.onset_evidence is not None else "absent"
+        tail = (f"Output: {_TARGET_SCHEMA_DESCRIPTION}"
+                if self.template_version == 1 else _CONTRACT_RESPONSE_SCHEMA)
         return (
             f"{self.instructions}\n\n"
             f"Candidate fault families: {candidates}\n\n"
@@ -172,7 +224,7 @@ class TrainingInputTemplate(StrictModel):
             f"- topology_hash: {features.topology_hash}\n"
             f"- baseline_evidence: present\n"
             f"- onset_evidence: {onset}\n\n"
-            f"Output: {_TARGET_SCHEMA_DESCRIPTION}"
+            f"{tail}"
         )
 
 
@@ -294,4 +346,62 @@ def diagnosis_training_policy(
         task_id=task_id, input_template_id=input_template.input_template_id,
         target_template_id=target_template.target_template_id,
         training_data_policy_id=policy_id,
+    )
+
+
+def contract_aligned_input_template(
+    *,
+    task_id: str,
+    feature_policy_id: str,
+) -> TrainingInputTemplate:
+    """The Gate 16A v2 training-input template (contract-aligned, locked).
+
+    Renders byte-identically to the deployed Gate 8 prompt for the same
+    features. Exposes NO text parameters: the instruction sentence, the
+    response-schema sentence, the name, and the candidate class space are all
+    fixed to the mirrored deployed contract and Literal-checked by the model
+    validator — arbitrary prompt-text injection is unrepresentable.
+    """
+    template_id = derive_input_template_id(
+        schema_version=1,
+        template_version=CONTRACT_ALIGNED_TEMPLATE_VERSION,
+        name=CONTRACT_ALIGNED_TEMPLATE_NAME,
+        instructions=_CONTRACT_INSTRUCTIONS,
+        candidate_families=TRAINING_CANDIDATE_FAMILIES,
+        task_id=task_id, feature_policy_id=feature_policy_id,
+    )
+    return TrainingInputTemplate(
+        template_version=CONTRACT_ALIGNED_TEMPLATE_VERSION,
+        name=CONTRACT_ALIGNED_TEMPLATE_NAME,
+        instructions=_CONTRACT_INSTRUCTIONS,
+        candidate_families=TRAINING_CANDIDATE_FAMILIES,
+        task_id=task_id, feature_policy_id=feature_policy_id,
+        input_template_id=template_id,
+    )
+
+
+def contract_aligned_training_policy(
+    *,
+    task_id: str,
+    input_template: TrainingInputTemplate,
+    target_template: TrainingTargetTemplate,
+) -> TrainingDataPolicy:
+    """The Gate 16A eligibility policy: v2 input + the UNCHANGED v1 target.
+
+    Eligibility itself is byte-identical to Gate 10A (train-partition,
+    accepted-fault, accepted-diagnosis only; abstention structurally
+    excluded — those fields are Literal-locked on ``TrainingDataPolicy``).
+    Only the bound input-template identity differs, so the policy id changes
+    while the target-template id must remain the frozen v1 identity.
+    """
+    if input_template.template_version != CONTRACT_ALIGNED_TEMPLATE_VERSION:
+        raise ValueError(
+            "the contract-aligned policy requires the v2 input template")
+    if target_template.target_version != TARGET_TEMPLATE_VERSION:
+        raise ValueError(
+            "the contract-aligned policy requires the UNCHANGED v1 target "
+            "template")
+    return diagnosis_training_policy(
+        task_id=task_id, input_template=input_template,
+        target_template=target_template,
     )

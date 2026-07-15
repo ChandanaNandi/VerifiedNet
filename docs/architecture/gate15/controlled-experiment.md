@@ -161,3 +161,13 @@ network-free offline chain; no-host-facts artifacts; build-twice
 byte-identical offline experiments; and the double-gated operational test
 that runs the REAL experiment end-to-end with source fingerprints and
 without ever asserting improvement.
+
+## Gate 16A note
+
+The Gate 16 design review traced this gate's `unchanged` outcome to the
+CONDITIONING mismatch (the v1 training input differs byte-wise from the
+deployed prompt) and proved the supervised target already parser-valid;
+Gate 16A adds the contract-aligned training-input template v2 (byte-identical
+to the deployed prompt, ADR-0034) as the single isolated variable for the
+next preregistered experiment (see
+`../gate16/contract-aligned-serialization.md`).

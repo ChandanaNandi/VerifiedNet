@@ -157,3 +157,12 @@ execution: planning binds this corpus by id and digest through a descriptor
 (count and identity only — never example text); a future execution gate will
 consume the examples themselves exclusively through `load_training_pairs`.
 Checkpoints and actual fine-tuning come later, behind their own gates.
+
+## Gate 16A note
+
+`TrainingInputTemplate` gains an additive, Literal-locked v2 whose rendering
+is byte-identical to the deployed Gate 8 prompt (ADR-0034); v1 remains the
+byte-frozen serialization documented here, with its renderings and
+identities pinned by contract tests. Eligibility, the target template, and
+the leakage audit are unchanged (see
+`../gate16/contract-aligned-serialization.md`).

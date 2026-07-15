@@ -279,6 +279,22 @@ and evaluation forward; nothing imports it. **No prompt, parser, scoring,
 ranking, corpus, or split change; no second configuration, RAG, agents,
 deployment, or publication.** See
 `architecture/gate15/controlled-experiment.md`.
+Gate 16A (contract-aligned training serialization) is implemented with
+ADR-0034: Gate 15's conditioning mismatch is closed at the contract level —
+`TrainingInputTemplate` gains an additive v2 whose rendering is
+byte-identical to the frozen Gate 8 deployed prompt (v1 renderings and every
+persisted identity stay pinned byte-for-byte), with the v2 text
+Literal-locked to mirrored constants (no prompt-text injection possible), a
+cross-layer byte-equality proof in the contract/property tiers, an unchanged
+v1 target proven to round-trip the frozen parser for every family, a
+same-64-source proof (exact ordered source-id equality between the capped v1
+and v2 corpora), and a gated real-tokenizer proof that all 64 selected v2
+examples fit the unchanged 384/64/448 sequence policy. No experiment, plan,
+authorization, training run, checkpoint, evaluation, or benchmark exists in
+this gate — Gate 16B (the second preregistered one-run experiment) is
+deliberately unstarted. **No prompt, parser, scoring, ranking, comparison,
+objective, eligibility, or success-policy change.** See
+`architecture/gate16/contract-aligned-serialization.md`.
 Layers beyond are **planned, not
 implemented** — no prompt optimization, RAG,
 GraphRAG, agent, memory, or persistent workflow exists yet. The deterministic

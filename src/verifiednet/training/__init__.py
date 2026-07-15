@@ -187,10 +187,14 @@ from verifiednet.training.planstore import (
     write_training_plan,
 )
 from verifiednet.training.policy import (
+    CONTRACT_ALIGNED_TEMPLATE_NAME,
+    CONTRACT_ALIGNED_TEMPLATE_VERSION,
     TRAINING_CANDIDATE_FAMILIES,
     TrainingDataPolicy,
     TrainingInputTemplate,
     TrainingTargetTemplate,
+    contract_aligned_input_template,
+    contract_aligned_training_policy,
     derive_input_template_id,
     derive_target_template_id,
     derive_training_data_policy_id,
@@ -340,6 +344,8 @@ from verifiednet.training.trainer import (
 
 __all__ = [
     "AUTHORIZED_TARGET_KEYS",
+    "CONTRACT_ALIGNED_TEMPLATE_NAME",
+    "CONTRACT_ALIGNED_TEMPLATE_VERSION",
     "EVENT_TRANSITIONS",
     "EXPECTED_TRAINING_FILES",
     "FAKE_CHECKPOINT_PAYLOAD_FORMAT",
@@ -535,6 +541,8 @@ __all__ = [
     "compute_plan_digest",
     "compute_real_checkpoint_digest",
     "compute_training_corpus_digest",
+    "contract_aligned_input_template",
+    "contract_aligned_training_policy",
     "count_safetensors_parameters",
     "derive_authorization_id",
     "derive_backend_spec_id",
