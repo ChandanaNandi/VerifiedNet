@@ -31,15 +31,36 @@ from verifiednet.labs.frr.topologies import (
     two_router_frr_topology,
     two_router_frr_topology_v2,
     two_router_frr_topology_v3,
+    two_router_frr_topology_v4,
+    two_router_frr_topology_v5,
+    two_router_frr_topology_v6,
 )
 from verifiednet.orchestrator.catalog import ScenarioCase, case_by_id
 from verifiednet.schemas.topology import TopologySpec
 
 #: The approved expansion topology variants, in deterministic order.
+#: FROZEN at Gate 14's three variants: ``build_expansion_matrix`` (the v2
+#: campaign) is immutable history — Gate 14B variants live in the v3 map.
 EXPANSION_TOPOLOGY_FACTORIES: dict[str, Callable[[], TopologySpec]] = {
     "2r-v1": two_router_frr_topology,
     "2r-v2": two_router_frr_topology_v2,
     "2r-v3": two_router_frr_topology_v3,
+}
+
+#: Gate 14B (corpus v3): all six approved two-router variants. The three new
+#: variants (v4/v5/v6) use disjoint ASNs, subnets, and loopbacks, so each has
+#: a distinct ``topology_hash`` — a genuinely new identity dimension value.
+GATE14B_TOPOLOGY_FACTORIES: dict[str, Callable[[], TopologySpec]] = {
+    **EXPANSION_TOPOLOGY_FACTORIES,
+    "2r-v4": two_router_frr_topology_v4,
+    "2r-v5": two_router_frr_topology_v5,
+    "2r-v6": two_router_frr_topology_v6,
+}
+
+#: Per-topology PF case-id suffix ("" is the original v1-topology pair).
+_PF_SUFFIX_BY_TOPOLOGY: dict[str, str] = {
+    "2r-v1": "", "2r-v2": "-t2", "2r-v3": "-t3",
+    "2r-v4": "-t4", "2r-v5": "-t5", "2r-v6": "-t6",
 }
 
 #: Uniform runs-per-identity per fault family — chosen ONLY to balance the
@@ -54,9 +75,13 @@ GATE14_RUNS_PER_IDENTITY: dict[str, int] = {
 
 
 def expansion_topology(topology_id: str) -> TopologySpec:
-    """The approved topology for one variant id; fail closed on unknown ids."""
+    """The approved topology for one variant id; fail closed on unknown ids.
+
+    Resolves over the FULL approved map (Gate 14 + Gate 14B variants); the
+    Gate 14 matrix itself still iterates only its own frozen three-variant map.
+    """
     try:
-        return EXPANSION_TOPOLOGY_FACTORIES[topology_id]()
+        return GATE14B_TOPOLOGY_FACTORIES[topology_id]()
     except KeyError as exc:
         raise KeyError(f"unknown expansion topology: {topology_id!r}") from exc
 
@@ -116,3 +141,53 @@ def build_expansion_matrix() -> tuple[ExpansionScenario, ...]:
 #: and abstention diversity comes from identities, not from unsupported codes.
 GATE14_REJECTED_RUNS_PER_IDENTITY = 2
 GATE14_REJECTED_TARGETS: tuple[str, ...] = ("router_a", "router_b")
+
+
+# ---------------------------------------------------------------------------
+# Gate 14B (corpus v3): the COMPLETE candidate identity pool
+# ---------------------------------------------------------------------------
+
+#: The ten approved RAS parameter combinations (Gate 14B adds alt3..alt8 —
+#: six new valid ``wrong_asn`` values/orientations colliding with no approved
+#: topology ASN).
+GATE14B_RAS_CASE_IDS: tuple[str, ...] = (
+    "ras-ref", "ras-rev", "ras-alt", "ras-alt2", "ras-alt3", "ras-alt4",
+    "ras-alt5", "ras-alt6", "ras-alt7", "ras-alt8")
+
+#: Rejected-coverage plan for v3: per topology variant, both rejected target
+#: orientations, two runs each (12 abstention identities, 24 runs). The
+#: Gate 6 rejected projection supports precondition-phase rejections ONLY —
+#: abstention diversity comes from identities, never from unsupported codes.
+GATE14B_REJECTED_RUNS_PER_IDENTITY = 2
+GATE14B_REJECTED_TARGETS: tuple[str, ...] = GATE14_REJECTED_TARGETS
+
+
+def build_v3_candidate_pool() -> tuple[ExpansionScenario, ...]:
+    """The COMPLETE Gate 14B candidate pool, in deterministic order.
+
+    Per approved topology variant (all six): the ten approved RAS parameter
+    combinations, both NR orientations, both IF orientations, and the two
+    per-topology PF cases — 96 candidate stable identities. ``planned_runs``
+    is a placeholder of 1: run allocation is the identity-first planner's
+    job (per-partition run rules from the frozen identity-coverage policy),
+    never this pool's.
+    """
+    out: list[ExpansionScenario] = []
+    for topology_id in sorted(GATE14B_TOPOLOGY_FACTORIES):
+        suffix = _PF_SUFFIX_BY_TOPOLOGY[topology_id]
+        groups: tuple[tuple[str, tuple[ScenarioCase, ...]], ...] = (
+            ("bgp_remote_as_mismatch",
+             tuple(case_by_id(c) for c in GATE14B_RAS_CASE_IDS)),
+            ("bgp_neighbor_removal",
+             (case_by_id("nr-ref"), case_by_id("nr-rev"))),
+            ("iface_admin_shutdown",
+             (case_by_id("if-ref"), case_by_id("if-rev"))),
+            ("bgp_prefix_withdrawal",
+             (case_by_id(f"pf{suffix}-ref"), case_by_id(f"pf{suffix}-rev"))),
+        )
+        for fault_family, cases in groups:
+            for case in cases:
+                out.append(ExpansionScenario(
+                    case=case, topology_id=topology_id,
+                    fault_family=fault_family, planned_runs=1))
+    return tuple(out)

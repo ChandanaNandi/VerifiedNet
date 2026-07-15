@@ -239,6 +239,24 @@ byte-identical, and no model loads anywhere. The full campaign (156 accepted
 + 12 rejected runs) registers project corpus v2 via the gated operational
 path. **No retraining, evaluation, benchmarking, or prompt change.** See
 `architecture/gate14/corpus-expansion.md`.
+Gate 14B (evaluation corpus v3 coverage campaign) is implemented with
+ADR-0032: experiment readiness becomes a two-axis, fail-closed verdict —
+example thresholds AND independent held-out identity coverage — after Gate 14
+showed 22 test rows spanning only 5 identities; an identity-first planner
+selects from the complete 96-identity pool (six approved topology variants ×
+sixteen approved cases, incl. twelve additive catalog cases) in an explicit
+deterministic priority order with bounded reproducibility repeats (2-4 runs
+per identity), the selection persists as a content-addressed artifact,
+identity-minimum checks merge into the same registration-blocking gate, the
+v2-versus-v3 comparison gains per-partition identity deltas, and the
+self-validating persisted `EvaluationReadinessAssessment` governs Gate 15
+authorization. The full campaign (206 accepted + 24 rejected runs over 58
+selected identities) registers project corpus v3: 36 eligible test examples
+across 12 identities, 42 validation across 14, 6 topology variants,
+imbalance 1.46 — verdict `ready_for_controlled_experiment`. v1 and v2 remain
+byte-identical; no model loads anywhere. **No retraining, evaluation,
+benchmarking, prompt, scoring, ranking, label, or split-policy change.** See
+`architecture/gate14b/identity-coverage.md`.
 Layers beyond are **planned, not
 implemented** — no prompt optimization, RAG,
 GraphRAG, agent, memory, or persistent workflow exists yet. The deterministic

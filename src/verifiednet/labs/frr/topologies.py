@@ -118,3 +118,93 @@ def two_router_frr_topology_v3(
         ),
         images=ImageSpec(frr=image_ref),
     )
+
+
+def two_router_frr_topology_v4(
+    image_ref: str = "frrouting/frr:v8.4.1",
+) -> TopologySpec:
+    """Gate 14B expansion topology variant 4 (AS 65201<->65202, 172.28.0.0/30,
+    10.255.3.1/32 / 10.255.3.2/32 loopbacks). Same approved two-router shape, distinct
+    network semantics -> distinct ``topology_hash``."""
+    return TopologySpec(
+        name="verifiednet-frr-2r-v4",
+        backend="frr-compose",
+        nodes=(
+            NodeSpec(name="router_a", asn=65201, loopback="10.255.3.1/32"),
+            NodeSpec(name="router_b", asn=65202, loopback="10.255.3.2/32"),
+        ),
+        links=(
+            LinkSpec(
+                a=LinkEndpoint(node="router_a", iface="eth1", ip="172.28.0.1/30"),
+                b=LinkEndpoint(node="router_b", iface="eth1", ip="172.28.0.2/30"),
+            ),
+        ),
+        sessions=(
+            BgpSessionSpec(
+                session_id="a-b",
+                a=SessionEndpoint(node="router_a", peer_ip="172.28.0.2", remote_as=65202),
+                b=SessionEndpoint(node="router_b", peer_ip="172.28.0.1", remote_as=65201),
+            ),
+        ),
+        images=ImageSpec(frr=image_ref),
+    )
+
+
+def two_router_frr_topology_v5(
+    image_ref: str = "frrouting/frr:v8.4.1",
+) -> TopologySpec:
+    """Gate 14B expansion topology variant 5 (AS 65301<->65302, 172.27.0.0/30,
+    10.255.4.1/32 / 10.255.4.2/32 loopbacks). Same approved two-router shape, distinct
+    network semantics -> distinct ``topology_hash``."""
+    return TopologySpec(
+        name="verifiednet-frr-2r-v5",
+        backend="frr-compose",
+        nodes=(
+            NodeSpec(name="router_a", asn=65301, loopback="10.255.4.1/32"),
+            NodeSpec(name="router_b", asn=65302, loopback="10.255.4.2/32"),
+        ),
+        links=(
+            LinkSpec(
+                a=LinkEndpoint(node="router_a", iface="eth1", ip="172.27.0.1/30"),
+                b=LinkEndpoint(node="router_b", iface="eth1", ip="172.27.0.2/30"),
+            ),
+        ),
+        sessions=(
+            BgpSessionSpec(
+                session_id="a-b",
+                a=SessionEndpoint(node="router_a", peer_ip="172.27.0.2", remote_as=65302),
+                b=SessionEndpoint(node="router_b", peer_ip="172.27.0.1", remote_as=65301),
+            ),
+        ),
+        images=ImageSpec(frr=image_ref),
+    )
+
+
+def two_router_frr_topology_v6(
+    image_ref: str = "frrouting/frr:v8.4.1",
+) -> TopologySpec:
+    """Gate 14B expansion topology variant 6 (AS 65401<->65402, 172.26.0.0/30,
+    10.255.5.1/32 / 10.255.5.2/32 loopbacks). Same approved two-router shape, distinct
+    network semantics -> distinct ``topology_hash``."""
+    return TopologySpec(
+        name="verifiednet-frr-2r-v6",
+        backend="frr-compose",
+        nodes=(
+            NodeSpec(name="router_a", asn=65401, loopback="10.255.5.1/32"),
+            NodeSpec(name="router_b", asn=65402, loopback="10.255.5.2/32"),
+        ),
+        links=(
+            LinkSpec(
+                a=LinkEndpoint(node="router_a", iface="eth1", ip="172.26.0.1/30"),
+                b=LinkEndpoint(node="router_b", iface="eth1", ip="172.26.0.2/30"),
+            ),
+        ),
+        sessions=(
+            BgpSessionSpec(
+                session_id="a-b",
+                a=SessionEndpoint(node="router_a", peer_ip="172.26.0.2", remote_as=65402),
+                b=SessionEndpoint(node="router_b", peer_ip="172.26.0.1", remote_as=65401),
+            ),
+        ),
+        images=ImageSpec(frr=image_ref),
+    )

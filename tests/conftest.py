@@ -1233,6 +1233,149 @@ def expansion_corpus_pipeline(eval_pipeline) -> Callable[..., object]:
     return _helper
 
 
+def gate14b_candidate_pool():
+    """The COMPLETE Gate 14B candidate pool as fully-defined identities.
+
+    Returns ``(pool, topologies_by_hash)`` where ``topologies_by_hash`` maps
+    each candidate ``topology_hash`` to ``(topology_id, TopologySpec)`` so
+    run entries can be emitted for a selection.
+    """
+    from verifiednet.common.hashing import sha256_canonical
+    from verifiednet.datasets.models import StableScenarioIdentity
+    from verifiednet.evaluation import CandidateScenario
+    from verifiednet.orchestrator.expansion import (
+        build_v3_candidate_pool,
+        expansion_topology,
+    )
+
+    pool = []
+    topologies_by_hash = {}
+    for spec in build_v3_candidate_pool():
+        topo = expansion_topology(spec.topology_id)
+        topology_hash = sha256_canonical(topo)
+        topologies_by_hash[topology_hash] = (spec.topology_id, topo)
+        params = dict(spec.case.scenario.parameters)
+        pool.append(CandidateScenario(
+            case_id=spec.case.case_id, fault_family=spec.fault_family,
+            identity=StableScenarioIdentity(
+                template_id=spec.case.scenario.template_id,
+                scenario_id=spec.case.scenario.scenario_id,
+                target_node=str(params.get("target_node", "")),
+                target_session=str(params.get("target_session", "")),
+                parameters={k: params[k] for k in sorted(params)},
+                topology_hash=topology_hash, backend="frr-compose"),
+            planned_runs=1))
+    return tuple(pool), topologies_by_hash
+
+
+def gate14b_selection(*, expansion_policy=None):
+    """The Gate 14B identity-first selection over the complete pool.
+
+    Returns ``(selection, identity_policy, expansion_policy,
+    topologies_by_hash)``. Without an explicit v3 expansion policy a
+    placeholder source binding is used — the SELECTED IDENTITIES and run
+    counts are independent of the source corpus identity, so run entries from
+    a placeholder-bound selection are exactly those of the real one.
+    """
+    from verifiednet.datasets.models import SplitPolicy
+    from verifiednet.evaluation import (
+        build_expansion_policy_v3,
+        build_identity_coverage_policy,
+        plan_identity_first_selection,
+    )
+    from verifiednet.orchestrator.expansion import (
+        GATE14B_REJECTED_TARGETS,
+        GATE14B_TOPOLOGY_FACTORIES,
+    )
+
+    pool, topologies_by_hash = gate14b_candidate_pool()
+    policy = expansion_policy or build_expansion_policy_v3(
+        source_corpus_id="evalcorpus-" + "0" * 16,
+        source_corpus_digest="ecdig-" + "0" * 24)
+    identity_policy = build_identity_coverage_policy(
+        expansion_policy_id=policy.expansion_policy_id)
+    selection = plan_identity_first_selection(
+        pool, expansion_policy=policy, identity_policy=identity_policy,
+        split_policy=SplitPolicy(salt="gate6", train_buckets=8000,
+                                 validation_buckets=1000, test_buckets=1000),
+        planned_rejected_identities=(len(GATE14B_TOPOLOGY_FACTORIES)
+                                     * len(GATE14B_REJECTED_TARGETS)))
+    return selection, identity_policy, policy, topologies_by_hash
+
+
+def gate14b_run_entries(*, runs_cap: int | None = None, selection=None,
+                        topologies_by_hash=None):
+    """Gate 14B campaign run entries from the identity-first selection.
+
+    ``runs_cap`` limits runs-per-identity for FAST offline tests; the full
+    campaign uses each selected identity's planner-allocated run count. The
+    identity SET is the selection's either way — the cap only trims
+    reproducibility repeats, never identities.
+    """
+    from verifiednet.orchestrator.catalog import case_by_id
+    from verifiednet.orchestrator.expansion import (
+        GATE14B_REJECTED_RUNS_PER_IDENTITY,
+        GATE14B_REJECTED_TARGETS,
+        GATE14B_TOPOLOGY_FACTORIES,
+        expansion_topology,
+    )
+
+    if selection is None or topologies_by_hash is None:
+        selection, _identity_policy, _policy, topologies_by_hash = \
+            gate14b_selection()
+    accepted = []
+    for entry in selection.entries:
+        topology_id, topo = topologies_by_hash[
+            entry.candidate.identity.topology_hash]
+        runs = entry.candidate.planned_runs if runs_cap is None \
+            else min(entry.candidate.planned_runs, runs_cap)
+        for i in range(1, runs + 1):
+            accepted.append((case_by_id(entry.candidate.case_id), topo,
+                             f"run-14b-{topology_id}-"
+                             f"{entry.candidate.case_id}-{i}"))
+    rejected = []
+    for topology_id in sorted(GATE14B_TOPOLOGY_FACTORIES):
+        topo = expansion_topology(topology_id)
+        for target in GATE14B_REJECTED_TARGETS:
+            node_tag = target.removeprefix("router_")
+            runs = GATE14B_REJECTED_RUNS_PER_IDENTITY if runs_cap is None \
+                else min(GATE14B_REJECTED_RUNS_PER_IDENTITY, runs_cap)
+            for i in range(1, runs + 1):
+                rejected.append((f"run-14b-rej-{topology_id}-{node_tag}-{i}",
+                                 f"{topology_id}-{node_tag}", target, topo))
+    return accepted, rejected
+
+
+@pytest.fixture
+def gate14b_pool() -> Callable[..., object]:
+    """The Gate 14B candidate-pool builder, exposed as a fixture."""
+    return gate14b_candidate_pool
+
+
+@pytest.fixture
+def gate14b_entries() -> Callable[..., object]:
+    """The Gate 14B run-entry builder, exposed as a fixture."""
+    return gate14b_run_entries
+
+
+@pytest.fixture
+def gate14b_selection_builder() -> Callable[..., object]:
+    """The Gate 14B selection builder, exposed as a fixture."""
+    return gate14b_selection
+
+
+@pytest.fixture
+def gate14b_corpus_pipeline(eval_pipeline) -> Callable[..., object]:
+    """Gate 14B chain: the full (or capped) v3 campaign -> prepared corpus."""
+
+    def _helper(tmp_path, *, runs_cap: int | None = None):
+        accepted, rejected = gate14b_run_entries(runs_cap=runs_cap)
+        ctx = eval_pipeline(tmp_path, accepted=accepted, rejected=rejected)
+        return ctx, accepted, rejected
+
+    return _helper
+
+
 # --------------------------------------------------------------------------
 # Gate 5.2: deterministic neighbor-removal lab sim + builder, shared by the
 # unit and failure tiers (tests/ is not a package; shared helpers live here).
