@@ -105,3 +105,16 @@ result validator refuses a dishonest `improved`; the v2 corpus is
 firewall-clean, model-free, network-free, and leaves the source prepared
 corpus byte-identical; and the gated operational experiment with prior-
 artifact immutability fingerprints.
+
+## Follow-up: the conditioning boundary (Gate 17)
+
+Gate 16B's `empty_output ×230` was diagnosed (read-only, on the existing
+checkpoint) as immediate EOS on the raw deployed prompt: `P(EOS)≈0.93`,
+decoded `""`, and appending the single masked training separator `"\n"`
+(token 198) restored valid JSON (`P("{")≈0.9999`). The remedy is the additive
+Gate 17A boundary-aligned objective (`objpol-7e6428964eae2db8`), which removes
+the masked separator so training supervises the first target token under the
+exact raw inference prefix. See
+`architecture/gate17/boundary-aligned-objective.md` and ADR-0035. Gate 17A is
+objective-only; the preregistered experiment that binds it (Gate 17B) is
+unstarted.

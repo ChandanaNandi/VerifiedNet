@@ -620,20 +620,40 @@ class HFTrainingEngine:
         if eos is None:
             raise TrainingEngineError(
                 RealFailureClass.TOKENIZATION_FAILED, "tokenizer has no EOS")
-        from verifiednet.training.bounds import build_causal_lm_example
+        from verifiednet.training.bounds import (
+            build_boundary_aligned_example,
+            build_causal_lm_example,
+        )
 
-        sep_ids = tuple(tokenizer.encode(objective.separator,
-                                         add_special_tokens=False))
+        # Dispatch on the verified objective contract (never a hidden flag):
+        # the Gate 17A boundary-aligned objective assembles input+target+EOS
+        # with NO separator span; the Gate 10F objective inserts the masked
+        # "\n". Inference behavior is untouched by either path.
+        boundary_aligned = (
+            objective.sequence_construction == "input_target_eos")
+        sep_ids = (
+            () if boundary_aligned
+            else tuple(tokenizer.encode(
+                objective.separator, add_special_tokens=False)))
         encoded = []
         for pair in pairs:
-            tokens, labels = build_causal_lm_example(
-                input_token_ids=tuple(tokenizer.encode(
-                    pair.input_text, add_special_tokens=False)),
-                separator_token_ids=sep_ids,
-                target_token_ids=tuple(tokenizer.encode(
-                    pair.target_text, add_special_tokens=False)),
-                eos_token_id=eos,
-                max_total_tokens=spec.sequence_policy.max_total_tokens)
+            pair_input_ids = tuple(tokenizer.encode(
+                pair.input_text, add_special_tokens=False))
+            pair_target_ids = tuple(tokenizer.encode(
+                pair.target_text, add_special_tokens=False))
+            if boundary_aligned:
+                tokens, labels = build_boundary_aligned_example(
+                    input_token_ids=pair_input_ids,
+                    target_token_ids=pair_target_ids,
+                    eos_token_id=eos,
+                    max_total_tokens=spec.sequence_policy.max_total_tokens)
+            else:
+                tokens, labels = build_causal_lm_example(
+                    input_token_ids=pair_input_ids,
+                    separator_token_ids=sep_ids,
+                    target_token_ids=pair_target_ids,
+                    eos_token_id=eos,
+                    max_total_tokens=spec.sequence_policy.max_total_tokens)
             encoded.append((tokens, labels))
         log.emit(E.TOKENIZATION_COMPLETED, S.STARTING, S.STARTING,
                  detail_code=objective.objective_policy_id,

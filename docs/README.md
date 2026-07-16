@@ -313,6 +313,23 @@ fingerprinted immutable. **No prompt, parser, scoring, ranking, target,
 objective, or success-policy change; no warm start, second run, larger
 budget, LoRA, RAG, agents, deployment, or publication.** See
 `architecture/gate16/contract-aligned-conditioning-experiment.md`.
+Gate 17A (contract-aligned boundary objective) is an additive objective-only
+change grounded in a read-only diagnostic on the Gate 16B checkpoint: on the
+raw deployed prompt the trained model emitted immediate EOS (`P(EOS)≈0.93`,
+decoded `""`, reproducing `eval-c5a63abb095e270f` exactly), and appending the
+single masked training separator `"\n"` (token 198) restored valid JSON
+(`P("{")≈0.9999`). The new objective `objpol-7e6428964eae2db8` removes the
+masked separator so a sequence is `input + target + EOS` with input-only
+masking, making the supervised first-target-token context byte-identical to the
+frozen raw inference prefix; the Gate 10F objective `objpol-e5f36da1a1292f3d`
+stays pinned byte-for-byte. Tokenization is piecewise (input/target encoded
+independently), so removing the separator retokenizes neither side. **No
+prompt, parser, scoring, ranking, comparison, reliability-classification,
+target, template, model, tokenizer, corpus, decoding, or success-policy change;
+no experiment, plan, authorization, training run, checkpoint, evaluation, or
+benchmark — Gate 17B (binding the objective in a preregistered one-run
+experiment) is deliberately unstarted.** See
+`architecture/gate17/boundary-aligned-objective.md` and ADR-0035.
 Layers beyond are **planned, not
 implemented** — no prompt optimization, RAG,
 GraphRAG, agent, memory, or persistent workflow exists yet. The deterministic

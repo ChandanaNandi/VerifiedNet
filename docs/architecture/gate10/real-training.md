@@ -71,7 +71,17 @@ positions with −100 so loss covers ONLY target and the single trailing EOS;
 pad right and mask padded labels; mean loss over unmasked positions; no chat
 template. `build_causal_lm_example` is a pure integer function (tested
 without any tokenizer); overlength examples fail closed per the Gate 10B
-sequence policy. Optimizer/scheduler arguments come from the plan EXACTLY
+sequence policy.
+
+> **Gate 17A addendum (additive).** An additive boundary-aligned objective
+> `objpol-7e6428964eae2db8` is available alongside the separator-bearing
+> `objpol-e5f36da1a1292f3d` above. It serializes `input_text + target_text +
+> EOS` (no separator) and masks the input span **only**, so the supervised
+> first target token is conditioned on the exact raw deployed inference
+> prefix. The pure builder `build_boundary_aligned_example` has no separator
+> parameter; the executor dispatches on the objective's `sequence_construction`
+> contract. The v1 objective, its id, and every prior artifact are unchanged.
+> See `architecture/gate17/boundary-aligned-objective.md` and ADR-0035. Optimizer/scheduler arguments come from the plan EXACTLY
 (learning rate, weight decay, betas, epsilon, clipping, scheduler, warmup);
 a plan without a declared clip norm refuses (clipping is required). Every
 Gate 10B seed is applied; canonical data order means shuffling is disabled;

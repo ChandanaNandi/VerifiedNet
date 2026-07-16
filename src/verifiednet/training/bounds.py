@@ -222,9 +222,10 @@ class TrainingObjectivePolicy(StrictModel):
         "training_pair_input_text")
     target_serialization: Literal["training_pair_target_text"] = (
         "training_pair_target_text")
-    separator: Literal["\n"] = "\n"
+    separator: Literal["\n", ""] = "\n"
     special_vocab_rule: Literal["append_eos_only"] = "append_eos_only"
-    label_masking: Literal["mask_input_and_separator"] = (
+    label_masking: Literal[
+        "mask_input_and_separator", "mask_input_only"] = (
         "mask_input_and_separator")
     ignore_index: Literal[-100] = -100
     padding_rule: Literal["pad_right_mask_labels"] = "pad_right_mask_labels"
@@ -234,8 +235,35 @@ class TrainingObjectivePolicy(StrictModel):
     chat_template: Literal["none"] = "none"
     objective_policy_id: str = Field(min_length=1)
 
+    @property
+    def sequence_construction(self) -> str:
+        """Explicit generation-boundary contract for executor dispatch.
+
+        ``input_target_eos`` (Gate 17A) supervises the first target token
+        under the exact deployed inference prefix — no separator span.
+        ``input_separator_target_eos`` (Gate 10F) inserts the single masked
+        ``"\\n"`` separator between input and target. This is a derived view
+        of the frozen fields, never serialized, so it does not affect the
+        content-addressed ``objective_policy_id``.
+        """
+        return ("input_target_eos"
+                if self.label_masking == "mask_input_only"
+                else "input_separator_target_eos")
+
     @model_validator(mode="after")
     def _valid(self) -> TrainingObjectivePolicy:
+        # Exactly two coherent boundary configurations are representable: the
+        # Gate 10F separator-bearing objective and the Gate 17A boundary-
+        # aligned objective. No other (separator, masking) pairing can be
+        # constructed — a hidden separator may not coexist with input-only
+        # masking, nor input+separator masking with no separator span.
+        if self.label_masking == "mask_input_and_separator" and (
+                self.separator != "\n"):
+            raise ValueError(
+                "mask_input_and_separator requires the '\\n' separator")
+        if self.label_masking == "mask_input_only" and self.separator != "":
+            raise ValueError(
+                "mask_input_only forbids a separator (separator must be '')")
         if self.objective_policy_id != derive_objective_policy_id(self):
             raise ValueError("objective_policy_id does not match the policy")
         return self
@@ -250,6 +278,26 @@ def derive_objective_policy_id(policy: TrainingObjectivePolicy) -> str:
 def build_causal_lm_objective_policy() -> TrainingObjectivePolicy:
     probe = TrainingObjectivePolicy.model_construct()
     return TrainingObjectivePolicy(
+        objective_policy_id=derive_objective_policy_id(probe))
+
+
+def boundary_aligned_objective_policy() -> TrainingObjectivePolicy:
+    """Gate 17A: the boundary-aligned causal-LM objective.
+
+    Identical to the Gate 10F objective in every respect EXCEPT that the
+    masked ``"\\n"`` separator is removed: sequences are ``input + target +
+    EOS`` and loss masks the input span ONLY (target and the single trailing
+    EOS are supervised). This makes the supervised first-target-token context
+    byte-identical to the frozen deployed inference prompt, which is fed raw
+    with no trailing separator (Gate 17 diagnostic: the separator-bearing
+    checkpoint emitted immediate EOS on the raw prompt; appending the single
+    ``"\\n"`` restored valid JSON). The derived id is deterministic and
+    distinct from the separator-bearing ``objpol-e5f36da1a1292f3d``.
+    """
+    probe = TrainingObjectivePolicy.model_construct(
+        separator="", label_masking="mask_input_only")
+    return TrainingObjectivePolicy(
+        separator="", label_masking="mask_input_only",
         objective_policy_id=derive_objective_policy_id(probe))
 
 
@@ -278,6 +326,34 @@ def build_causal_lm_example(
     masked = len(input_token_ids) + len(separator_token_ids)
     labels = ((ignore_index,) * masked, (*target_token_ids, eos_token_id))
     return tokens, (*labels[0], *labels[1])
+
+
+def build_boundary_aligned_example(
+    *,
+    input_token_ids: tuple[int, ...],
+    target_token_ids: tuple[int, ...],
+    eos_token_id: int,
+    max_total_tokens: int,
+    ignore_index: int = -100,
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    """Gate 17A pure objective construction: ``input + target + EOS``.
+
+    The boundary-aligned counterpart of ``build_causal_lm_example`` with NO
+    separator span: there is no separator parameter, so a separator token can
+    never enter between the input and the target. Labels mask the input
+    positions ONLY (``ignore_index``); the target ids and the single trailing
+    EOS carry their own ids. Input and target are supplied already-tokenized
+    and independently, so removing the separator never retokenizes either
+    side. Overlength examples FAIL CLOSED via the shared core. Pure integers;
+    testable without any tokenizer or framework.
+    """
+    return build_causal_lm_example(
+        input_token_ids=input_token_ids,
+        separator_token_ids=(),
+        target_token_ids=target_token_ids,
+        eos_token_id=eos_token_id,
+        max_total_tokens=max_total_tokens,
+        ignore_index=ignore_index)
 
 
 # ---------------------------------------------------------------------------
