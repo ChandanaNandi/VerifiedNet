@@ -120,3 +120,10 @@ target, template, model, tokenizer, corpus, decoding, or success-policy change;
 no warm start, second run, larger budget, LoRA, RAG, agents, deployment, or
 publication. See the Gate 17 pre-implementation review and diagnostic for the
 evidence this design rests on.
+
+**Gate 17B outcome (experiment).** The preregistered experiment
+`exp-2d7024f609a37a2c` bound this objective and confirmed the prediction:
+structured-output validity moved `0/230 → 230/230` (Gate 16B's `empty_output
+×230` eliminated), while accepted-diagnosis accuracy did not improve (0/36 test
+correct — valid JSON, wrong family), so the frozen policy reports `mixed`. See
+`architecture/gate17/boundary-aligned-experiment.md`.

@@ -330,6 +330,23 @@ no experiment, plan, authorization, training run, checkpoint, evaluation, or
 benchmark — Gate 17B (binding the objective in a preregistered one-run
 experiment) is deliberately unstarted.** See
 `architecture/gate17/boundary-aligned-objective.md` and ADR-0035.
+Gate 17B (boundary-aligned objective experiment) is the preregistered one-run
+experiment (ADR-0033) that binds the Gate 17A objective and changes exactly ONE
+variable from Gate 16B — the objective (`objpol-e5f36da1a1292f3d` →
+`objpol-7e6428964eae2db8`); v2 input, targets, the ordered 64 sources, model,
+budget, prompt, parser, scoring, benchmark, and success policy are held
+identical, and switching the objective yields a distinct experiment id while
+every other control stays byte-equal. Operational result
+(`exp-2d7024f609a37a2c`): outcome `mixed`. Fresh-from-base treatment checkpoint
+(`realckpt-f1f86f9d70fc1db7172e93a2`, no parent, loss `3.53→0.070`); **structured
+validity `0/230 → 230/230`** — the boundary-aligned objective eliminated Gate
+16B's `empty_output ×230` and produced valid JSON for every example — but
+accepted-diagnosis accuracy did not improve (0/36 test correct; valid JSON, wrong
+family), so the frozen policy reports `mixed`, never `improved`. Gate 15/16B/10F.1
+checkpoints and the base model byte-identical. **No prompt, parser, scoring,
+ranking, target, objective, or success-policy change; no warm start, second run,
+larger budget, LoRA, RAG, agents, deployment, or publication.** See
+`architecture/gate17/boundary-aligned-experiment.md`.
 Layers beyond are **planned, not
 implemented** — no prompt optimization, RAG,
 GraphRAG, agent, memory, or persistent workflow exists yet. The deterministic
