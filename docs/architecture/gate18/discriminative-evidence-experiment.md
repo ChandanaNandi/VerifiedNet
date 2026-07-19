@@ -116,6 +116,17 @@ held-out gain; it is deliberately *not* a claim of robust diagnosis. Closing
 the collapse (decoding, objective shaping beyond the boundary, data balance, or
 capacity) is a distinct axis for a future gate. No generalization claim is made.
 
+**Follow-up (Gate 19).** The Gate 19 diagnosis (read-only, on this result)
+localised the collapse to training-family imbalance: the seven observable v2
+fields give one payload per family with zero collisions and a four-flag oracle
+scores 36/36 on the test set, yet the natural first-64 corpus is `25 / 21 / 17 /
+1` and even the 17 neighbor-removal training examples are misclassified. The
+model discriminates only on the coarse peer-state field and collapses the three
+active-state families onto the majority. Gate 19A adds a content-addressed
+family-balanced source-selection policy (budget-preserving 20/20/20/4) as the
+next single variable; Gate 19B will test whether balancing removes the collapse.
+See `architecture/gate19/family-balanced-selection.md` and ADR-0037.
+
 ## Scope
 
 Representation is the sole independent variable. No model, tokenizer, budget,

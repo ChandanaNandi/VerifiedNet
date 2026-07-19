@@ -15,7 +15,7 @@ from pathlib import Path
 
 from verifiednet.datasets.evidence_features import FeaturePolicyV2
 from verifiednet.datasets.evidence_resolution import resolve_features_v2
-from verifiednet.datasets.features import AcceptedLabels
+from verifiednet.datasets.features import AcceptedLabels, SeparatedDatasetExample
 from verifiednet.datasets.models import DatasetExampleKind, DatasetPartition
 from verifiednet.datasets.prepared import LoadedPrepared
 from verifiednet.training.corpus import (
@@ -36,6 +36,7 @@ from verifiednet.training.policy import (
     TrainingTargetTemplate,
     render_training_input_v2,
 )
+from verifiednet.training.selection import BalancedSelectionResult
 
 
 def build_evidence_observation_corpus(
@@ -46,12 +47,21 @@ def build_evidence_observation_corpus(
     training_data_policy: TrainingDataPolicy,
     input_template: TrainingInputTemplate,
     target_template: TrainingTargetTemplate,
+    selection: BalancedSelectionResult | None = None,
 ) -> TrainingCorpus:
     """Build the v2 evidence-observation supervised training corpus.
 
     Deterministic; reads only the observable evidence bundles the sources point
     at; fails closed on a policy/template mismatch, a leaking example, or missing
     evidence.
+
+    When ``selection`` is ``None`` (Gate 18B) the corpus contains every accepted
+    TRAIN source. When a :class:`BalancedSelectionResult` is supplied (Gate 19A),
+    the corpus contains exactly and only its selected sources. In BOTH cases the
+    corpus examples are canonically ordered by ``source_example_id`` (the
+    content-addressing invariant); the balanced round-robin order lives in the
+    selection result as provenance. The per-example render and target are
+    byte-identical to the unselected build for any shared source.
     """
     if input_template.template_version != EVIDENCE_OBSERVATION_TEMPLATE_VERSION:
         raise TrainingCorpusError("input template is not the v3 contract")
@@ -63,17 +73,40 @@ def build_evidence_observation_corpus(
         raise TrainingCorpusError("input template binds a different feature policy")
 
     manifest = prepared.manifest
-    examples: list[SupervisedTrainingExample] = []
-    seen: set[str] = set()
+    eligible: dict[str, SeparatedDatasetExample] = {}
     for source in prepared.examples:  # already example-id sorted
         if source.trace.partition is not DatasetPartition.TRAIN:
             continue
         if source.trace.example_kind is not DatasetExampleKind.ACCEPTED_FAULT:
             continue
+        eligible[source.trace.example_id] = source
+
+    if selection is None:
+        source_ids: list[str] = sorted(eligible)
+        selected_family: dict[str, str] = {}
+    else:
+        if selection.source_prepared_digest != manifest.prepared_digest:
+            raise TrainingCorpusError(
+                "selection was built for a different prepared corpus")
+        source_ids = list(selection.ordered_source_example_ids)
+        selected_family = {s.example_id: s.fault_family for s in selection.selected}
+
+    examples: list[SupervisedTrainingExample] = []
+    seen: set[str] = set()
+    for example_id in source_ids:
+        candidate = eligible.get(example_id)
+        if candidate is None:
+            raise TrainingCorpusError(
+                f"selected source is not an accepted train example: {example_id}")
+        source = candidate
         labels = source.labels
         if not isinstance(labels, AcceptedLabels):
             raise TrainingCorpusError(
                 f"train example {source.trace.example_id} lacks accepted labels")
+        if selection is not None and selected_family[example_id] != labels.fault_family:
+            raise TrainingCorpusError(
+                f"selection family mismatch for {example_id}: "
+                f"selected {selected_family[example_id]}, labelled {labels.fault_family}")
         if source.trace.example_id in seen:
             raise TrainingCorpusError(
                 f"duplicate source example: {source.trace.example_id}")
@@ -111,6 +144,10 @@ def build_evidence_observation_corpus(
             raise TrainingCorpusError(f"training leakage detected: {codes}")
         examples.append(example)
 
+    # The corpus is ALWAYS canonically ordered by source_example_id (the
+    # content-addressing invariant, byte-identical methodology to Gate 18B); the
+    # selection changes only WHICH sources are present, never their corpus order.
+    # The balanced round-robin order is the selection result's provenance order.
     ordered = tuple(sorted(examples, key=lambda e: e.trace.source_example_id))
     corpus_id = derive_training_corpus_id(
         task_id=training_data_policy.task_id,

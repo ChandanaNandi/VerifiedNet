@@ -2465,3 +2465,65 @@ def catalog_sim_cls():
 @pytest.fixture
 def run_catalog_case():
     return run_catalog_case_offline
+
+
+@pytest.fixture
+def balanced_prepared():
+    """Build a synthetic LoadedPrepared with configurable per-family TRAIN counts
+    for Gate 19A source-selection tests. Objects are fully valid; only the
+    trace + accepted labels the selector reads are meaningful. No evidence
+    resolution is exercised (that lives in the gated real-chain proof)."""
+    from verifiednet.datasets.features import (
+        AcceptedLabels,
+        DatasetFeatures,
+        DatasetTraceMetadata,
+        FeatureEvidenceRef,
+        SeparatedDatasetExample,
+    )
+    from verifiednet.datasets.models import (
+        ArtifactReference,
+        DatasetExampleKind,
+        DatasetPartition,
+    )
+    from verifiednet.datasets.prepared import LoadedPrepared, PreparedManifest
+
+    def _ref(path: str) -> ArtifactReference:
+        return ArtifactReference(run_id="run-x", relative_path=path)
+
+    def _ex(example_id, group_id, family, *,
+            partition=DatasetPartition.TRAIN,
+            kind=DatasetExampleKind.ACCEPTED_FAULT):
+        feats = DatasetFeatures(
+            feature_policy_id="feat-x", topology_hash="a" * 64, backend="frr",
+            baseline_evidence=FeatureEvidenceRef(relative_path="evidence/baseline.json"),
+            onset_evidence=FeatureEvidenceRef(relative_path="evidence/onset.json"))
+        labels = AcceptedLabels(
+            label_policy_id="label-x", fault_family=family,
+            scenario_id="scn-" + example_id,
+            ground_truth_reference=_ref("gt.json"),
+            recovery_reference=_ref("rec.json"))
+        trace = DatasetTraceMetadata(
+            example_id=example_id, group_id=group_id, run_id="run-x",
+            run_digest="rd", example_kind=kind, partition=partition,
+            split_policy_id="split-x", dataset_version="ds-1",
+            source_index_digest="idx", example_schema_version=1,
+            incident_reference=_ref("inc.json"))
+        return SeparatedDatasetExample(features=feats, labels=labels, trace=trace)
+
+    def build(counts, *, dataset_version="ds-1",
+              prepared_digest="prep-" + "0" * 24, extra=()):
+        examples = []
+        i = 0
+        for fam in sorted(counts):
+            for _ in range(counts[fam]):
+                i += 1
+                examples.append(_ex(f"ex-{i:04d}", f"grp-{i:04d}", fam))
+        examples.extend(extra)
+        examples.sort(key=lambda e: e.trace.example_id)
+        manifest = PreparedManifest.model_construct(
+            prepared_digest=prepared_digest, dataset_version=dataset_version)
+        return LoadedPrepared(
+            manifest=manifest, examples=tuple(examples), by_partition={})
+
+    build.example = _ex  # expose the factory for failure-case construction
+    return build

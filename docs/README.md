@@ -387,6 +387,23 @@ Sources fingerprinted byte-identical; test-set firewall passed; strictly offline
 generated artifacts live outside the repo and are not committed. Prior outcomes
 (Gate 15/16B `unchanged`, Gate 17B `mixed`) are not reinterpreted. See
 `architecture/gate18/discriminative-evidence-experiment.md`.
+Gate 19A (deterministic family-balanced training selection) is an additive,
+content-addressed training source-selection policy
+(`FamilyBalancedSelectionPolicy`, `fbsel-…`) grounded in the Gate 19 diagnosis
+that Gate 18B's collapse is training-family imbalance, not representation: the
+seven observable v2 fields give one payload per family with zero collisions and a
+four-flag oracle scores 36/36 on the test set, yet the natural first-64 corpus is
+`25 / 21 / 17 / 1` and the model collapses the three active-state families onto
+the majority. The policy selects a budget-preserving, family-balanced 64-example
+corpus (20/20/20/4) from the FROZEN train partition — deterministic, round-robin,
+fail-closed, never duplicating/synthesizing/redistributing and never crossing the
+train firewall — leaving the v2 feature/prompt/objective/target/tokenizer and the
+Gate 18B corpus byte-unchanged. A deterministic comparison proves shared sources
+render byte-identically; a gated read-only real-chain proof confirms the 20/20/20/4
+counts, deployed==training bytes, the 384/64/448 budget, and source immutability.
+**No fine-tune, experiment, checkpoint, evaluation, benchmark, or interpretation —
+that is Gate 19B.** See `architecture/gate19/family-balanced-selection.md` and
+ADR-0037.
 Layers beyond are **planned, not
 implemented** — no prompt optimization, RAG,
 GraphRAG, agent, memory, or persistent workflow exists yet. The deterministic
