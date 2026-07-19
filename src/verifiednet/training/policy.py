@@ -75,6 +75,10 @@ _TARGET_SCHEMA_DESCRIPTION = (
 CONTRACT_ALIGNED_TEMPLATE_VERSION: Literal[2] = 2
 CONTRACT_ALIGNED_TEMPLATE_NAME = "contract_aligned_fault_diagnosis"
 
+#: Gate 18A/18B — the evidence-observation (v2 feature) training-input contract.
+EVIDENCE_OBSERVATION_TEMPLATE_VERSION: Literal[3] = 3
+EVIDENCE_OBSERVATION_TEMPLATE_NAME = "evidence_observation_fault_diagnosis"
+
 _CONTRACT_INSTRUCTIONS = (
     "You are a deterministic network fault-diagnosis classifier. You are given "
     "only observation metadata about one verified network run. Decide whether a "
@@ -169,8 +173,10 @@ class TrainingInputTemplate(StrictModel):
 
     schema_version: Literal[1] = 1
     #: 1 = Gate 10A serialization (byte-frozen); 2 = Gate 16A contract-aligned
-    #: serialization (byte-identical to the deployed Gate 8 prompt rendering).
-    template_version: Literal[1, 2] = 1
+    #: serialization (byte-identical to the deployed Gate 8 prompt rendering);
+    #: 3 = Gate 18A evidence-observation serialization (v2 observable features;
+    #: rendered by the shared ``render_training_input_v2`` from DatasetFeaturesV2).
+    template_version: Literal[1, 2, 3] = 1
     name: str = Field(min_length=1)
     instructions: str = Field(min_length=1)
     candidate_families: tuple[str, ...] = Field(min_length=1)
@@ -198,6 +204,21 @@ class TrainingInputTemplate(StrictModel):
                 raise ValueError(
                     "a v2 template must carry exactly the approved candidate "
                     "class space")
+        if self.template_version == EVIDENCE_OBSERVATION_TEMPLATE_VERSION:
+            # v3 shares the frozen deployed instructions/candidates; only the
+            # observation block (v2 observable features) differs, and it is
+            # rendered by the shared render_training_input_v2 (single source).
+            if self.instructions != _CONTRACT_INSTRUCTIONS:
+                raise ValueError(
+                    "a v3 template must carry exactly the mirrored deployed "
+                    "instruction text")
+            if self.name != EVIDENCE_OBSERVATION_TEMPLATE_NAME:
+                raise ValueError(
+                    "a v3 template must carry the evidence-observation name")
+            if self.candidate_families != TRAINING_CANDIDATE_FAMILIES:
+                raise ValueError(
+                    "a v3 template must carry exactly the approved candidate "
+                    "class space")
         expected = derive_input_template_id(
             schema_version=self.schema_version, template_version=self.template_version,
             name=self.name, instructions=self.instructions,
@@ -209,13 +230,20 @@ class TrainingInputTemplate(StrictModel):
         return self
 
     def render(self, features: DatasetFeatures) -> str:
-        """Deterministically render the model input from features ONLY.
+        """Deterministically render the model input from v1 features ONLY.
 
         v1 renders the byte-frozen Gate 10A serialization; v2 renders the
         deployed Gate 8 prompt serialization (same observation block, the
         mirrored instruction sentence, and the mirrored response-schema
-        sentence in place of the v1 ``Output:`` line).
+        sentence in place of the v1 ``Output:`` line). The v3 evidence-
+        observation contract renders from ``DatasetFeaturesV2`` and is served by
+        the shared ``render_training_input_v2`` — it is not representable through
+        this v1-typed render, which fails closed for v3.
         """
+        if self.template_version == EVIDENCE_OBSERVATION_TEMPLATE_VERSION:
+            raise ValueError(
+                "a v3 evidence-observation template renders from "
+                "DatasetFeaturesV2; use render_training_input_v2(...)")
         candidates = ", ".join(self.candidate_families)
         onset = "present" if features.onset_evidence is not None else "absent"
         tail = (f"Output: {_TARGET_SCHEMA_DESCRIPTION}"
@@ -431,4 +459,61 @@ def render_training_input_v2(features: DatasetFeaturesV2) -> str:
         f"Candidate fault families: {candidates}\n\n"
         f"{block}\n\n"
         f"{_CONTRACT_RESPONSE_SCHEMA}"
+    )
+
+
+def evidence_observation_input_template(
+    *,
+    task_id: str,
+    feature_policy_v2_id: str,
+) -> TrainingInputTemplate:
+    """The Gate 18A/18B v3 evidence-observation training-input template.
+
+    A content-addressed identity binding the v2 feature policy; the actual input
+    text is produced by the shared ``render_training_input_v2`` (byte-identical
+    to the deployed v2 prompt). Exposes no text parameters — the instructions,
+    response schema, name, and candidate class space are fixed to the mirrored
+    deployed contract and Literal-checked.
+    """
+    template_id = derive_input_template_id(
+        schema_version=1,
+        template_version=EVIDENCE_OBSERVATION_TEMPLATE_VERSION,
+        name=EVIDENCE_OBSERVATION_TEMPLATE_NAME,
+        instructions=_CONTRACT_INSTRUCTIONS,
+        candidate_families=TRAINING_CANDIDATE_FAMILIES,
+        task_id=task_id, feature_policy_id=feature_policy_v2_id,
+    )
+    return TrainingInputTemplate(
+        template_version=EVIDENCE_OBSERVATION_TEMPLATE_VERSION,
+        name=EVIDENCE_OBSERVATION_TEMPLATE_NAME,
+        instructions=_CONTRACT_INSTRUCTIONS,
+        candidate_families=TRAINING_CANDIDATE_FAMILIES,
+        task_id=task_id, feature_policy_id=feature_policy_v2_id,
+        input_template_id=template_id,
+    )
+
+
+def evidence_observation_training_policy(
+    *,
+    task_id: str,
+    input_template: TrainingInputTemplate,
+    target_template: TrainingTargetTemplate,
+) -> TrainingDataPolicy:
+    """The Gate 18B eligibility policy: v3 evidence-observation input + v1 target.
+
+    Eligibility is byte-identical to Gate 10A (train-partition, accepted-fault,
+    accepted-diagnosis only; abstention structurally excluded). Only the bound
+    input-template identity differs (v3), so the policy id changes while the
+    target-template id remains the frozen v1 identity.
+    """
+    if input_template.template_version != EVIDENCE_OBSERVATION_TEMPLATE_VERSION:
+        raise ValueError(
+            "the evidence-observation policy requires the v3 input template")
+    if target_template.target_version != TARGET_TEMPLATE_VERSION:
+        raise ValueError(
+            "the evidence-observation policy requires the UNCHANGED v1 target "
+            "template")
+    return diagnosis_training_policy(
+        task_id=task_id, input_template=input_template,
+        target_template=target_template,
     )

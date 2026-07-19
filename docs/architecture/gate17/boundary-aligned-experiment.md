@@ -77,5 +77,10 @@ diagnostic) and ADR-0035.
 ceiling: the v1 model-visible features are label-ambiguous (6 payloads, all
 family-ambiguous across 206 accepted examples). Gate 18A adds an additive
 discriminative feature policy v2 that exposes observable evidence with zero
-cross-family collisions on the real chain. See
-`architecture/gate18/discriminative-evidence-features.md` and ADR-0036.
+cross-family collisions on the real chain. Gate 18B then bound that
+representation in a preregistered one-run experiment (changing only v1 → v2 from
+this gate) and moved the outcome from `mixed` to `improved` on a `3/36` held-out
+accepted-test gain — the first in the series — though the model still collapses
+toward a dominant family. This gate's `mixed` outcome is unchanged. See
+`architecture/gate18/discriminative-evidence-features.md`,
+`architecture/gate18/discriminative-evidence-experiment.md`, and ADR-0036.

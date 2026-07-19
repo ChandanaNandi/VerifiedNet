@@ -102,4 +102,7 @@ render, and the test tiers (including a gated read-only real-chain proof). It
 builds no training corpus, binds no experiment, and runs no model. Gate 18B —
 the preregistered one-run experiment binding the v2 features/prompt under the
 otherwise-frozen Gate 17B controls, with a matched base-vs-trained evaluation —
-remains unstarted. See ADR-0036.
+is complete: it produced the series' first held-out accepted-test accuracy gain
+(`3/36`, outcome `improved`) while confirming the model still collapses toward a
+dominant family. See `architecture/gate18/discriminative-evidence-experiment.md`
+and ADR-0036.

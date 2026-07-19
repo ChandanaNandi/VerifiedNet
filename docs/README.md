@@ -365,8 +365,28 @@ keeps the deployed prompt and the training input byte-identical, preserving the
 Gate 17A boundary, and all 64 training examples fit the 384/64/448 envelope. v1
 and every prior artifact are byte-unchanged. **No training, experiment, plan,
 authorization, execution, checkpoint, evaluation, benchmark, comparison, or
-result — Gate 18B is deliberately unstarted.** See
+result — that is Gate 18B.** See
 `architecture/gate18/discriminative-evidence-features.md` and ADR-0036.
+Gate 18B (discriminative evidence representation experiment) is the preregistered
+one-run experiment (ADR-0033) that binds the Gate 18A v2 features/prompt
+(`feat-228b357dd9f256fa` / `prompt-d4ff1ee1c637ea70`) and changes exactly ONE
+variable from Gate 17B — the model-visible representation — holding the pinned
+model, ordered 64 sources, boundary-aligned objective, budget, target, parser,
+scoring, benchmark, and success policy byte-identical. One fresh fine-tune
+(`realckpt-79cb06cc8d955b2c33a92205`, parent `None`, loss `3.406183 → 0.000071`),
+matched base-vs-trained evaluation over the four predictors (evidence-rule,
+fixed-prior, base v2, trained v2). The trained model preserved structured-output
+**validity `0/230 → 230/230`** and produced the series' **first held-out
+accepted-test accuracy gain — `3/36` correct versus the matched base's `0/36`**
+(strict, zero-regression), moving the frozen outcome from Gate 17B's `mixed` to
+**`improved`**. The gain is marginal and family-local: the model emits only two
+of four families (`iface_admin_shutdown` ×184, `bgp_prefix_withdrawal` ×46) and
+still collapses toward a dominant class, so Gate 18A's proven separability is
+only partially learned — no robust-diagnosis or generalization claim is made.
+Sources fingerprinted byte-identical; test-set firewall passed; strictly offline;
+generated artifacts live outside the repo and are not committed. Prior outcomes
+(Gate 15/16B `unchanged`, Gate 17B `mixed`) are not reinterpreted. See
+`architecture/gate18/discriminative-evidence-experiment.md`.
 Layers beyond are **planned, not
 implemented** — no prompt optimization, RAG,
 GraphRAG, agent, memory, or persistent workflow exists yet. The deterministic

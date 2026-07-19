@@ -232,9 +232,13 @@ def derive_features_v2(
     example legitimately has no onset), raw state reflects the healthy baseline and
     every delta is ``False``.
     """
-    if baseline.phase is not Phase.BASELINE:
+    # Accepted examples carry a BASELINE reference; rejected/abstention examples
+    # carry the PRECONDITION check as their reference bundle (no onset). Both are
+    # the healthy-intent reference state; ONSET/RECOVERY are never a reference.
+    if baseline.phase not in (Phase.BASELINE, Phase.PRECONDITION):
         raise EvidenceFeatureError(
-            f"baseline bundle has phase {baseline.phase!r}, expected baseline")
+            f"baseline bundle has phase {baseline.phase!r}, expected "
+            f"baseline or precondition")
     if onset is not None and onset.phase is not Phase.ONSET:
         raise EvidenceFeatureError(
             f"onset bundle has phase {onset.phase!r}, expected onset")
