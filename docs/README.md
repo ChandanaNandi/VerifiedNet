@@ -347,6 +347,26 @@ checkpoints and the base model byte-identical. **No prompt, parser, scoring,
 ranking, target, objective, or success-policy change; no warm start, second run,
 larger budget, LoRA, RAG, agents, deployment, or publication.** See
 `architecture/gate17/boundary-aligned-experiment.md`.
+Gate 18A (discriminative evidence representation) is an additive, content-
+addressed feature policy v2 (`feat-228b357dd9f256fa`) grounded in the Gate 18
+finding that Gate 17B's 0/36 accuracy is a representation ceiling, not a learner
+failure: on the v3 chain the v1 model-visible features have only 6 distinct
+payloads, all family-ambiguous (206/206 accepted examples ambiguous). v2 exposes
+bounded, deterministic OBSERVABLE network state (BGP session state, interface
+admin/oper, reachability) and baseline→onset deltas (peer-removed,
+remote-AS-changed, route-withdrawn) derived from the authoritative evidence
+bundles — the same inputs the Gate 5 oracle consumes, never its output. The
+derivation is pure and fails closed; a v2 leakage firewall proves no label /
+oracle-conclusion / identity / split / path enters the features. On the real v3
+chain v2 has 24 unique payloads with **zero cross-family collisions**, each
+family separated by its own observable flag (0 audit failures). Only the prompt
+observation block changes (instructions/schema frozen); a single shared render
+keeps the deployed prompt and the training input byte-identical, preserving the
+Gate 17A boundary, and all 64 training examples fit the 384/64/448 envelope. v1
+and every prior artifact are byte-unchanged. **No training, experiment, plan,
+authorization, execution, checkpoint, evaluation, benchmark, comparison, or
+result — Gate 18B is deliberately unstarted.** See
+`architecture/gate18/discriminative-evidence-features.md` and ADR-0036.
 Layers beyond are **planned, not
 implemented** — no prompt optimization, RAG,
 GraphRAG, agent, memory, or persistent workflow exists yet. The deterministic

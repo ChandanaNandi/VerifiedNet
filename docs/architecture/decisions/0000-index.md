@@ -46,6 +46,7 @@ implementation is deferred to the mapped future gates — see
 | 0033 | Model-quality experiments are preregistered, one-run, one-checkpoint, and interpreted by a frozen success policy behind a test-set firewall | Accepted |
 | 0034 | Training may mirror the deployed public prompt contract, but production training code never imports evaluation; byte equality is enforced across layers by contract tests | Accepted |
 | 0035 | Training objectives must supervise the first response token under the exact deployed inference conditioning prefix; a masked separator may not create a different generation boundary | Accepted |
+| 0036 | Model-visible diagnosis features may contain bounded observable network state and deterministic baseline→onset deltas, but never oracle conclusions, labels, identities, splits, or artifact paths | Accepted |
 
 Format for each record: **Status**, **Context**, **Decision**, **Consequences**,
 **References** (to the gate document or source that motivated it).

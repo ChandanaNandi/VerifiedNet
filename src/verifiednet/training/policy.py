@@ -28,6 +28,10 @@ from pydantic import Field, model_validator
 
 from verifiednet.common.canonical import canonical_json_str
 from verifiednet.common.hashing import sha256_canonical
+from verifiednet.datasets.evidence_features import (
+    DatasetFeaturesV2,
+    render_evidence_observation_block,
+)
 from verifiednet.datasets.features import DatasetFeatures
 from verifiednet.schemas.base import StrictModel
 
@@ -404,4 +408,27 @@ def contract_aligned_training_policy(
     return diagnosis_training_policy(
         task_id=task_id, input_template=input_template,
         target_template=target_template,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Gate 18A — v2 training input render (byte-identical to the deployed v2 prompt)
+# ---------------------------------------------------------------------------
+
+def render_training_input_v2(features: DatasetFeaturesV2) -> str:
+    """Render the v2 training input from v2 observable features ONLY.
+
+    Uses the mirrored Gate 16A instruction/response-schema constants (byte-equal
+    to the deployed Gate 8 prompt text) and the SHARED v2 observation render, so
+    the training input is byte-identical to the deployed inference prompt for the
+    same v2 features (Gate 17A boundary preservation). Training never imports the
+    evaluation package; the shared render lives in ``datasets``.
+    """
+    candidates = ", ".join(sorted(TRAINING_CANDIDATE_FAMILIES))
+    block = render_evidence_observation_block(features)
+    return (
+        f"{_CONTRACT_INSTRUCTIONS}\n\n"
+        f"Candidate fault families: {candidates}\n\n"
+        f"{block}\n\n"
+        f"{_CONTRACT_RESPONSE_SCHEMA}"
     )

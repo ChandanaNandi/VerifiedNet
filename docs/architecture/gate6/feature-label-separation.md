@@ -139,3 +139,14 @@ feature/label policies (new ids), not runtime conditionals. Part 4 closes Gate
 6.2. The prepared corpus — features separated from evaluator-only truth, with a
 structural leakage guarantee — is the stable input the evaluation gate (Gate 7)
 will consume.
+
+> **Gate 18A addendum (additive).** An additive feature policy v2
+> (`feat-228b357dd9f256fa`, `datasets.evidence_features`) exposes a bounded set of
+> OBSERVABLE network-state facts and deterministic baseline→onset deltas derived
+> from the authoritative evidence bundles — the same inputs the Gate 5 oracle
+> consumes, never its output. The Part-4 allowlist, the v1 policy id, and the
+> leakage audit are unchanged; the v2 audit (`audit_features_v2`) extends the same
+> walk with an allowlist lock, a fault-family-string guard, and an artifact-path
+> guard, and every field is categorized observable / delta — never a diagnostic
+> conclusion. See `architecture/gate18/discriminative-evidence-features.md` and
+> ADR-0036.

@@ -69,6 +69,13 @@ capacity) for a future gate. No accuracy claim is made here.
 No prompt, parser, scoring, ranking, comparison, reliability-classification,
 target, template, model, tokenizer, corpus, decoding, or success-policy change;
 the objective is the sole independent variable. No warm start, second run,
-larger budget, LoRA, RAG, agents, deployment, or publication. Gate 18 is not
-started. See `architecture/gate17/boundary-aligned-objective.md` (Gate 17A
-objective and the diagnostic) and ADR-0035.
+larger budget, LoRA, RAG, agents, deployment, or publication. See
+`architecture/gate17/boundary-aligned-objective.md` (Gate 17A objective and the
+diagnostic) and ADR-0035.
+
+**Follow-up (Gate 18).** The 0/36 accuracy was diagnosed as a representation
+ceiling: the v1 model-visible features are label-ambiguous (6 payloads, all
+family-ambiguous across 206 accepted examples). Gate 18A adds an additive
+discriminative feature policy v2 that exposes observable evidence with zero
+cross-family collisions on the real chain. See
+`architecture/gate18/discriminative-evidence-features.md` and ADR-0036.

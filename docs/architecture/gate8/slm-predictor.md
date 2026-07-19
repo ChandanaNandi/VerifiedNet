@@ -135,3 +135,13 @@ its public instruction and response-schema sentences (mirrored constants in
 the training layer, never shared code or an import); cross-layer contract
 tests enforce byte equality, so any change to this prompt fails CI until the
 mirror is deliberately revised (ADR-0034).
+
+> **Gate 18A addendum (additive).** A v2 prompt (`render_diagnosis_prompt_v2`)
+> keeps these instructions, the candidate list, and the response schema
+> byte-frozen and changes only the observation-metadata block, which now displays
+> the v2 observable evidence fields. The v2 observation render is a single shared
+> function in `datasets` (`render_evidence_observation_block`), so the deployed
+> inference prompt and the training input (`render_training_input_v2`) are
+> byte-identical by construction — no mirror drift — while training still imports
+> no evaluation code. The Gate 17A boundary (no trailing separator) is preserved.
+> See `architecture/gate18/discriminative-evidence-features.md` and ADR-0036.

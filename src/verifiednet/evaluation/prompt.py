@@ -18,6 +18,10 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from verifiednet.common.hashing import sha256_canonical
+from verifiednet.datasets.evidence_features import (
+    DatasetFeaturesV2,
+    render_evidence_observation_block,
+)
 from verifiednet.datasets.features import DatasetFeatures
 from verifiednet.schemas.base import StrictModel
 
@@ -124,4 +128,58 @@ def diagnosis_prompt_template(
     return PromptTemplate(
         name=name, instructions=_INSTRUCTIONS, candidate_families=families,
         response_schema=_RESPONSE_SCHEMA, prompt_template_id=template_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Gate 18A — v2 prompt: frozen instructions/candidates/schema, v2 observation
+# block. Only the OBSERVATION METADATA block changes; the shared render in
+# ``datasets.evidence_features`` is the single source of truth so the deployed
+# inference prompt and the training input are byte-identical (Gate 17A boundary).
+# ---------------------------------------------------------------------------
+
+PROMPT_OBSERVATION_VERSION_V2 = 2
+
+
+def derive_prompt_v2_template_id(
+    *,
+    feature_policy_v2_id: str,
+    name: str = "single_fault_family_diagnosis",
+    instructions: str = _INSTRUCTIONS,
+    candidate_families: tuple[str, ...] = DEFAULT_CANDIDATE_FAMILIES,
+    response_schema: str = _RESPONSE_SCHEMA,
+) -> str:
+    """Content-addressed id for the v2 prompt (frozen text + v2 observation)."""
+    payload = {
+        "schema_version": 1,
+        "template_version": PROMPT_TEMPLATE_VERSION,
+        "observation_version": PROMPT_OBSERVATION_VERSION_V2,
+        "name": name,
+        "instructions": instructions,
+        "candidate_families": sorted(candidate_families),
+        "response_schema": response_schema,
+        "feature_policy_v2_id": feature_policy_v2_id,
+    }
+    return "prompt-" + sha256_canonical(payload)[:16]
+
+
+def render_diagnosis_prompt_v2(
+    features: DatasetFeaturesV2,
+    *,
+    instructions: str = _INSTRUCTIONS,
+    candidate_families: tuple[str, ...] = DEFAULT_CANDIDATE_FAMILIES,
+    response_schema: str = _RESPONSE_SCHEMA,
+) -> str:
+    """Render the deployed v2 diagnosis prompt from v2 observable features ONLY.
+
+    Frozen Gate 8 instructions, candidate list, and response schema; only the
+    observation block (the shared, single-source v2 render) differs from v1.
+    """
+    candidates = ", ".join(sorted(candidate_families))
+    block = render_evidence_observation_block(features)
+    return (
+        f"{instructions}\n\n"
+        f"Candidate fault families: {candidates}\n\n"
+        f"{block}\n\n"
+        f"{response_schema}"
     )
