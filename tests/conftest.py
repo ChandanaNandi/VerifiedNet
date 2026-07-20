@@ -2556,3 +2556,135 @@ def remoteas_pool():
         return tuple(pool)
 
     return build
+
+
+@pytest.fixture
+def remoteas_campaign(remoteas_pool):
+    """Build a Gate 20B campaign context (spec, inventory, plan) plus a factory for
+    executed ``RemoteAsRunRecord`` tuples, from the synthetic remote-AS pool. No
+    live catalog, no run, no dataset — only the offline campaign-result contracts."""
+    from verifiednet.datasets.models import SplitPolicy
+    from verifiednet.experiment.remoteas_campaign import RemoteAsRunRecord
+    from verifiednet.experiment.remoteas_expansion import (
+        FrozenGroup as _FrozenGroup,
+    )
+    from verifiednet.experiment.remoteas_expansion import (
+        build_campaign_plan,
+        build_frozen_inventory,
+        plan_remoteas_expansion,
+        remoteas_expansion_spec,
+    )
+
+    pol = SplitPolicy(salt="gate6", train_buckets=8000,
+                      validation_buckets=1000, test_buckets=1000)
+
+    class _Ctx:
+        pass
+
+    def build(*, retry_allowance=2, pool_n=40):
+        frozen = build_frozen_inventory(
+            "prep-" + "0" * 24,
+            (_FrozenGroup(group_id="grp-frozenplaceholder", fault_family="x",
+                          partition="test", example_count=3),))
+        spec = remoteas_expansion_spec()
+        inventory = plan_remoteas_expansion(spec, remoteas_pool(pool_n), frozen,
+                                            split_policy=pol)
+        plan = build_campaign_plan(spec, inventory, retry_allowance=retry_allowance)
+        ctx = _Ctx()
+        ctx.spec, ctx.inventory, ctx.plan, ctx.frozen = spec, inventory, plan, frozen
+        return ctx
+
+    def record(expected, *, attempt=1, accepted=True, verified=None,
+               observed_group_id=None, failure_category="", run_suffix=""):
+        verified = accepted if verified is None else verified
+        observed = (expected.group_id if observed_group_id is None
+                    else observed_group_id)
+        rid = f"run-{expected.group_id[4:12]}-a{attempt}{run_suffix}"
+        return RemoteAsRunRecord(
+            planned_group_id=expected.group_id, case_id=expected.case_id,
+            topology_id=expected.topology_id, attempt=attempt, run_id=rid,
+            run_digest="rundig-" + rid, observed_group_id=observed,
+            verified=verified, accepted=accepted, failure_category=failure_category)
+
+    def accepted_records(inventory):
+        """Two accepted verified runs per planned group -> full 8x2 coverage. Both
+        are first attempts of their own planned slot (attempt=1); a genuine retry
+        (attempt>=2) re-runs a *failed* slot and is what ``retry_count`` measures."""
+        recs = []
+        for e in inventory.expected:
+            recs.append(record(e, attempt=1, run_suffix="s1"))
+            recs.append(record(e, attempt=1, run_suffix="s2"))
+        return tuple(recs)
+
+    build.record = record
+    build.accepted_records = accepted_records
+    return build
+
+
+@pytest.fixture
+def remoteas_prepared_pair(balanced_prepared):
+    """Build an append-only (v3, v4) prepared pair for Gate 20B diff tests: v4 is
+    v3 with N new TRAIN accepted remote-AS examples (new group_ids) appended, every
+    shared row byte-identical. Returns ``(v3, v4, frozen_remoteas_group_ids)``."""
+    from verifiednet.datasets.models import DatasetPartition
+    from verifiednet.datasets.prepared import LoadedPrepared, PreparedManifest
+
+    ex = balanced_prepared.example
+
+    def build(*, added=16, added_groups=8, mutate=None, drop_v3=False,
+              repartition=False, collide_group=None):
+        v3_examples = [
+            ex("ex-v3-0001", "grp-ras-frozen-a", "bgp_remote_as_mismatch",
+               partition=DatasetPartition.TRAIN),
+            ex("ex-v3-0002", "grp-ras-val-b", "bgp_remote_as_mismatch",
+               partition=DatasetPartition.VALIDATION),
+            ex("ex-v3-0003", "grp-ras-test-c", "bgp_remote_as_mismatch",
+               partition=DatasetPartition.TEST),
+            ex("ex-v3-0004", "grp-iface-d", "iface_admin_shutdown",
+               partition=DatasetPartition.TRAIN),
+        ]
+        frozen_ras = frozenset(
+            {"grp-ras-frozen-a", "grp-ras-val-b", "grp-ras-test-c"})
+        # v4 starts as a byte-identical copy of every v3 row.
+        v4_examples = list(v3_examples)
+        for g in range(added_groups):
+            gid = (collide_group if (collide_group and g == 0)
+                   else f"grp-ras-new-{g:02d}")
+            for r in range(max(1, added // added_groups)):
+                v4_examples.append(
+                    ex(f"ex-v4-new-{g:02d}-{r}", gid, "bgp_remote_as_mismatch",
+                       partition=DatasetPartition.TRAIN))
+        if mutate is not None:
+            # replace the shared v3 row with a byte-different version in v4 (a
+            # different fault_family guarantees the model_dump bytes differ)
+            idx = next(i for i, e in enumerate(v4_examples)
+                       if e.trace.example_id == mutate)
+            orig = v4_examples[idx]
+            new_family = ("bgp_neighbor_removal"
+                          if orig.labels.fault_family != "bgp_neighbor_removal"
+                          else "bgp_prefix_withdrawal")
+            v4_examples[idx] = ex(orig.trace.example_id, orig.trace.group_id,
+                                  new_family, partition=orig.trace.partition)
+        if repartition:
+            idx = next(i for i, e in enumerate(v4_examples)
+                       if e.trace.example_id == "ex-v3-0002")
+            orig = v4_examples[idx]
+            v4_examples[idx] = ex(orig.trace.example_id, orig.trace.group_id,
+                                  orig.labels.fault_family,
+                                  partition=DatasetPartition.TRAIN)
+        if drop_v3:
+            v4_examples = [e for e in v4_examples
+                           if e.trace.example_id != "ex-v3-0004"]
+
+        def _loaded(examples, digest):
+            ordered = tuple(sorted(examples, key=lambda e: e.trace.example_id))
+            manifest = PreparedManifest.model_construct(
+                prepared_digest=digest, dataset_version="ds-1")
+            return LoadedPrepared(manifest=manifest, examples=ordered,
+                                  by_partition={})
+
+        v3 = _loaded(v3_examples, "prep-v3-" + "0" * 20)
+        v4 = _loaded(v4_examples, "prep-v4-" + "0" * 20)
+        return v3, v4, frozen_ras
+
+    return build

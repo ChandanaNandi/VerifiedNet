@@ -133,6 +133,9 @@ inventories, the firewall, the campaign plan, the run-authorization contract, th
 append-only v4 plan, the readiness preview, the test tiers, and a gated read-only
 real-chain planning proof. It executes no scenario, produces no evidence, exports
 no dataset, registers no corpus, and trains no model. Gate 20B — the bounded
-remote-AS run campaign and append-only v4 registration — remains unstarted, as
-does Gate 20C (the one controlled training experiment). See ADR-0038, ADR-0018,
-ADR-0031, ADR-0032, and `architecture/gate19/family-balanced-experiment.md`.
+remote-AS run campaign and append-only v4 registration — is now **complete** (8/8
+verified TRAIN groups, 16/16 accepted examples on the real FRR lab; append-only v4
+with every v3 row byte-identical and every held-out partition unchanged); see
+`remoteas-campaign.md`. Gate 20C (the one controlled training experiment) remains
+unstarted. See ADR-0038, ADR-0018, ADR-0031, ADR-0032, and
+`architecture/gate19/family-balanced-experiment.md`.

@@ -124,8 +124,14 @@ append-only v4), and 20C (one experiment). Gate 20A is complete: it derives ≥ 
 unused, approved, TRAIN-assigned remote-AS identities disjoint from all 22 frozen
 groups (reproducing every frozen `group_id` from the production identity
 functions), with a fail-closed leakage firewall, a bounded campaign plan, and an
-append-only v4 contract — no runs. See
-`architecture/gate20/remoteas-expansion-contracts.md` and ADR-0038.
+append-only v4 contract — no runs. Gate 20B is also complete: the plan executed on
+the real FRR lab (8/8 verified TRAIN groups, 16/16 accepted examples, 0 retries)
+and registered an append-only v4 prepared chain (`eaddf66f…` → `3207fada…`) with
+all 230 v3 rows byte-identical, 16 TRAIN examples appended, and every held-out
+partition unchanged — lifting remote-AS TRAIN coverage from one group / four
+examples to nine groups / twenty examples. See
+`architecture/gate20/remoteas-expansion-contracts.md`,
+`architecture/gate20/remoteas-campaign.md`, and ADR-0038.
 
 ## Scope
 
