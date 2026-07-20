@@ -129,9 +129,16 @@ the real FRR lab (8/8 verified TRAIN groups, 16/16 accepted examples, 0 retries)
 and registered an append-only v4 prepared chain (`eaddf66f…` → `3207fada…`) with
 all 230 v3 rows byte-identical, 16 TRAIN examples appended, and every held-out
 partition unchanged — lifting remote-AS TRAIN coverage from one group / four
-examples to nine groups / twenty examples. See
+examples to nine groups / twenty examples. Gate 20C then ran the single controlled
+`16/16/16/16` experiment over that coverage and **falsified the coverage
+hypothesis**: with remote-AS spanning all nine independent verified TRAIN groups,
+held-out remote-AS recall stayed `0/30`, and the budget-preserving 20→16 reduction of
+the abundant families cost neighbor-removal (`3/3 → 0/3`, macro `0.667 → 0.333`) —
+identifying a residual field-to-label binding / model-capacity limitation for
+remote-AS rather than an imbalance deficit. See
 `architecture/gate20/remoteas-expansion-contracts.md`,
-`architecture/gate20/remoteas-campaign.md`, and ADR-0038.
+`architecture/gate20/remoteas-campaign.md`,
+`architecture/gate20/remoteas-coverage-experiment.md`, and ADR-0038.
 
 ## Scope
 

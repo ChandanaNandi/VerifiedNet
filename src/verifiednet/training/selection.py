@@ -280,6 +280,216 @@ def select_family_balanced(
         selection_digest=_derive_selection_digest(probe))
 
 
+DEFAULT_GROUP_BALANCED_ALLOCATION: tuple[tuple[str, int], ...] = (
+    ("bgp_neighbor_removal", 16),
+    ("bgp_prefix_withdrawal", 16),
+    ("bgp_remote_as_mismatch", 16),
+    ("iface_admin_shutdown", 16),
+)
+GROUP_BALANCED_SELECTION_TOTAL = 64
+#: Independent-group coverage floor per family (Gate 20C): remote-AS must span at
+#: least eight independent TRAIN groups so its 16 examples are diverse coverage,
+#: not repeated runs of a few groups. Other families are unconstrained (min 1).
+DEFAULT_MIN_GROUPS: tuple[tuple[str, int], ...] = (
+    ("bgp_neighbor_removal", 1),
+    ("bgp_prefix_withdrawal", 1),
+    ("bgp_remote_as_mismatch", 8),
+    ("iface_admin_shutdown", 1),
+)
+
+
+class GroupBalancedSelectionPolicy(StrictModel):
+    """The frozen, content-addressed GROUP-AWARE budget-preserving selection
+    policy (Gate 20C). Identical to the Gate 19A family-balanced policy except the
+    within-family fill draws one example per independent ``group_id`` in rotation
+    (group round-robin), maximising independent-group coverage, and each family
+    carries a fail-closed minimum-independent-group floor. Additive: it reuses the
+    Gate 19A ``FamilyQuota``/``SelectedSource``/``BalancedSelectionResult`` and
+    introduces the ``gbsel-`` id namespace, leaving every ``fbsel-`` id untouched.
+    """
+
+    schema_version: Literal[1] = 1
+    policy_format_version: Literal[1] = 1
+    allowed_partition: Literal["train"] = "train"
+    target_total: int = Field(ge=1)
+    family_order: tuple[str, ...] = Field(min_length=1)
+    per_family_allocation: tuple[FamilyQuota, ...] = Field(min_length=1)
+    min_groups_per_family: tuple[FamilyQuota, ...] = Field(min_length=1)
+    scarcity_rule: Literal["exact_quota_no_redistribution"] = (
+        "exact_quota_no_redistribution")
+    fill_rule: Literal["deterministic_group_round_robin"] = (
+        "deterministic_group_round_robin")
+    within_family_order: Literal["group_round_robin_then_example_id"] = (
+        "group_round_robin_then_example_id")
+    final_order_rule: Literal["round_robin_by_family_order"] = (
+        "round_robin_by_family_order")
+    policy_id: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _valid(self) -> GroupBalancedSelectionPolicy:
+        order = list(self.family_order)
+        if len(order) != len(set(order)):
+            raise ValueError("family_order must not repeat a family")
+        for fam in order:
+            if fam not in TRAINING_CANDIDATE_FAMILIES:
+                raise ValueError(f"unsupported fault family: {fam}")
+        if [q.fault_family for q in self.per_family_allocation] != order:
+            raise ValueError(
+                "per_family_allocation families/order must equal family_order")
+        if [q.fault_family for q in self.min_groups_per_family] != order:
+            raise ValueError(
+                "min_groups_per_family families/order must equal family_order")
+        if sum(q.count for q in self.per_family_allocation) != self.target_total:
+            raise ValueError("per-family quotas must sum to target_total")
+        for alloc, floor in zip(self.per_family_allocation,
+                                self.min_groups_per_family, strict=True):
+            if floor.count > alloc.count:
+                raise ValueError(
+                    f"min group floor exceeds quota for {alloc.fault_family}")
+        if self.policy_id != _derive_group_policy_id(self):
+            raise ValueError("policy_id does not match the policy content")
+        return self
+
+
+def _derive_group_policy_id(policy: GroupBalancedSelectionPolicy) -> str:
+    payload = policy.model_dump(mode="json")
+    payload.pop("policy_id", None)
+    return "gbsel-" + sha256_canonical(payload)[:16]
+
+
+def group_balanced_selection_policy(
+    *,
+    target_total: int = GROUP_BALANCED_SELECTION_TOTAL,
+    allocation: tuple[tuple[str, int], ...] = DEFAULT_GROUP_BALANCED_ALLOCATION,
+    min_groups: tuple[tuple[str, int], ...] = DEFAULT_MIN_GROUPS,
+) -> GroupBalancedSelectionPolicy:
+    """Construct the frozen group-aware policy with a content-addressed id."""
+    quotas = tuple(FamilyQuota(fault_family=fam, count=n) for fam, n in allocation)
+    floors = tuple(FamilyQuota(fault_family=fam, count=n) for fam, n in min_groups)
+    family_order = tuple(fam for fam, _ in allocation)
+    fields: dict[str, object] = {
+        "target_total": target_total, "family_order": family_order,
+        "per_family_allocation": quotas, "min_groups_per_family": floors}
+    probe = GroupBalancedSelectionPolicy.model_construct(**fields)  # type: ignore[arg-type]
+    return GroupBalancedSelectionPolicy(
+        **fields, policy_id=_derive_group_policy_id(probe))  # type: ignore[arg-type]
+
+
+def _group_round_robin(available: dict[str, list[str]], need: int) -> list[tuple[str, str]]:
+    """Pick ``need`` (group_id, example_id) pairs by drawing one example per group
+    in ``group_id`` order, rotating rounds, taking each group's examples in
+    ``example_id`` order. Maximises independent-group coverage."""
+    group_ids = sorted(available)
+    picked: list[tuple[str, str]] = []
+    column = 0
+    while len(picked) < need:
+        advanced = False
+        for gid in group_ids:
+            members = available[gid]
+            if column < len(members):
+                advanced = True
+                picked.append((gid, members[column]))
+                if len(picked) == need:
+                    return picked
+        if not advanced:
+            break
+        column += 1
+    return picked
+
+
+def select_group_balanced(
+    prepared: LoadedPrepared, *, policy: GroupBalancedSelectionPolicy,
+) -> BalancedSelectionResult:
+    """Deterministically select the group-aware balanced training sources.
+
+    Reads only accepted labels in the frozen TRAIN partition. For each family the
+    quota is filled by group round-robin over the family's independent groups;
+    fails closed on a short family, a group-coverage floor violation, a non-train
+    or rejected/unlabelled example, an unsupported family, or a duplicate. Never
+    redistributes a quota, oversamples, or synthesises.
+    """
+    if policy.allowed_partition != "train":
+        raise SelectionError("policy allows a non-train partition")
+    alloc = {q.fault_family: q.count for q in policy.per_family_allocation}
+    floors = {q.fault_family: q.count for q in policy.min_groups_per_family}
+    by_family_group: dict[str, dict[str, list[str]]] = {
+        fam: {} for fam in policy.family_order}
+    for source in prepared.examples:
+        if source.trace.partition is not DatasetPartition.TRAIN:
+            continue
+        if source.trace.example_kind is not DatasetExampleKind.ACCEPTED_FAULT:
+            continue
+        labels = source.labels
+        if not isinstance(labels, AcceptedLabels):
+            raise SelectionError(
+                f"train example {source.trace.example_id} lacks accepted labels")
+        fam = labels.fault_family
+        if fam not in by_family_group:
+            raise SelectionError(f"unsupported fault family in train partition: {fam}")
+        by_family_group[fam].setdefault(source.trace.group_id, []).append(
+            source.trace.example_id)
+
+    picked: dict[str, list[tuple[str, str]]] = {}
+    for fam in policy.family_order:
+        groups = {g: sorted(v) for g, v in by_family_group[fam].items()}
+        total_available = sum(len(v) for v in groups.values())
+        need = alloc[fam]
+        if total_available < need:
+            raise SelectionError(
+                f"insufficient '{fam}' train examples: need {need}, have "
+                f"{total_available}; no redistribution permitted")
+        chosen = _group_round_robin(groups, need)
+        covered = len({g for g, _ in chosen})
+        if covered < floors[fam]:
+            raise SelectionError(
+                f"'{fam}' spans only {covered} independent groups; "
+                f"policy requires >= {floors[fam]}")
+        picked[fam] = chosen
+
+    ordered: list[SelectedSource] = []
+    columns = max(alloc.values(), default=0)
+    for column in range(columns):
+        for fam in policy.family_order:
+            if column < alloc[fam]:
+                group_id, example_id = picked[fam][column]
+                ordered.append(SelectedSource(
+                    example_id=example_id, group_id=group_id, fault_family=fam))
+
+    example_ids = [s.example_id for s in ordered]
+    if len(example_ids) != len(set(example_ids)):
+        raise SelectionError("duplicate source identity in the selection")
+    if len(ordered) != policy.target_total:
+        raise SelectionError(
+            f"selected {len(ordered)} != target_total {policy.target_total}")
+
+    per_family_counts = tuple(
+        FamilyQuota(fault_family=fam, count=alloc[fam]) for fam in policy.family_order)
+    fields: dict[str, object] = {
+        "policy_id": policy.policy_id,
+        "source_prepared_digest": prepared.manifest.prepared_digest,
+        "dataset_version": prepared.manifest.dataset_version,
+        "family_order": tuple(policy.family_order),
+        "selected": tuple(ordered),
+        "ordered_source_example_ids": tuple(example_ids),
+        "per_family_counts": per_family_counts,
+        "total_count": len(ordered)}
+    probe = BalancedSelectionResult.model_construct(**fields)  # type: ignore[arg-type]
+    return BalancedSelectionResult(
+        **fields, selection_digest=_derive_selection_digest(probe))  # type: ignore[arg-type]
+
+
+def independent_group_counts(
+    result: BalancedSelectionResult,
+) -> tuple[FamilyQuota, ...]:
+    """The number of distinct independent ``group_id``s selected per family."""
+    groups: dict[str, set[str]] = {}
+    for s in result.selected:
+        groups.setdefault(s.fault_family, set()).add(s.group_id)
+    return tuple(
+        FamilyQuota(fault_family=fam, count=len(groups[fam]))
+        for fam in sorted(groups))
+
+
 class TrainingCorpusComparison(StrictModel):
     """A deterministic, byte-level comparison between two v2 training corpora
     (Gate 18B natural-order vs Gate 19 family-balanced). Proves the source

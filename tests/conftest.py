@@ -2688,3 +2688,55 @@ def remoteas_prepared_pair(balanced_prepared):
         return v3, v4, frozen_ras
 
     return build
+
+
+@pytest.fixture
+def coverage_prepared(balanced_prepared):
+    """Build a synthetic v4-like LoadedPrepared for Gate 20C group-aware selection
+    tests: the three abundant families each span 10 independent TRAIN groups (4
+    examples each), and bgp_remote_as_mismatch spans 9 independent TRAIN groups
+    (one legacy group of 4 + eight new groups of 2 = 20 examples), mirroring the
+    real v4 remote-AS coverage. Also seeds a few held-out rows. Configurable."""
+    from verifiednet.datasets.models import DatasetPartition
+    from verifiednet.datasets.prepared import LoadedPrepared, PreparedManifest
+
+    ex = balanced_prepared.example
+    ABUNDANT = ("bgp_neighbor_removal", "bgp_prefix_withdrawal",
+                "iface_admin_shutdown")
+
+    def build(*, ras_groups=((4,), tuple([2] * 8)),
+              abundant_groups=10, abundant_per_group=4,
+              dataset_version="v4-remoteas-expansion",
+              prepared_digest="prep-cov-" + "0" * 16):
+        rows = []
+        n = 0
+        for fam in ABUNDANT:
+            fam_tag = fam.split("_")[0][:3]
+            for g in range(abundant_groups):
+                for _ in range(abundant_per_group):
+                    n += 1
+                    rows.append(ex(f"ex-{fam_tag}-{n:04d}", f"grp-{fam_tag}-{g:02d}",
+                                   fam, partition=DatasetPartition.TRAIN))
+        # remote-AS: ras_groups is (legacy_sizes, new_sizes) tuples of per-group counts
+        legacy_sizes, new_sizes = ras_groups
+        gi = 0
+        for size in (*legacy_sizes, *new_sizes):
+            for _ in range(size):
+                n += 1
+                rows.append(ex(f"ex-ras-{n:04d}", f"grp-ras-{gi:02d}",
+                               "bgp_remote_as_mismatch",
+                               partition=DatasetPartition.TRAIN))
+            gi += 1
+        # a couple of held-out rows (not TRAIN) that selection must ignore
+        rows.append(ex("ex-ras-val-1", "grp-ras-val", "bgp_remote_as_mismatch",
+                       partition=DatasetPartition.VALIDATION))
+        rows.append(ex("ex-ras-test-1", "grp-ras-test", "bgp_remote_as_mismatch",
+                       partition=DatasetPartition.TEST))
+        rows.sort(key=lambda e: e.trace.example_id)
+        manifest = PreparedManifest.model_construct(
+            prepared_digest=prepared_digest, dataset_version=dataset_version)
+        return LoadedPrepared(manifest=manifest, examples=tuple(rows),
+                              by_partition={})
+
+    build.example = ex
+    return build

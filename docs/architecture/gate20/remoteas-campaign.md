@@ -112,8 +112,12 @@ family the frozen split covered adequately, but `bgp_remote_as_mismatch` stayed
 `0/30` because its TRAIN partition held one leakage group. Gate 20B removes that
 specific deficit at the data layer — append-only, firewall-clean, held-out
 immutable — and Gate 20C (the single controlled `16/16/16/16` training experiment)
-will test whether adequately-covered remote-AS now follows the same imbalance
-mechanism the other three families did. Gate 20B asserts **no** model result.
+tested whether adequately-covered remote-AS now follows the same imbalance mechanism
+the other three families did. It does **not**: with nine independent verified
+remote-AS TRAIN groups, held-out remote-AS recall stayed `0/30` — the coverage
+hypothesis is falsified, leaving a residual field-to-label binding / model-capacity
+limitation. See `remoteas-coverage-experiment.md`. Gate 20B itself asserts **no**
+model result.
 
 See `remoteas-expansion-contracts.md` (Gate 20A), ADR-0038 (append-only expansion
 campaigns), ADR-0031 (append-only corpus lineage), ADR-0032 (deterministic split),
