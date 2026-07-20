@@ -404,6 +404,29 @@ counts, deployed==training bytes, the 384/64/448 budget, and source immutability
 **No fine-tune, experiment, checkpoint, evaluation, benchmark, or interpretation —
 that is Gate 19B.** See `architecture/gate19/family-balanced-selection.md` and
 ADR-0037.
+Gate 19B (family-balanced corpus experiment) is the preregistered one-run
+experiment (ADR-0033) that binds the Gate 19A balanced selection policy
+(`fbsel-ab6bd447a29fa253`) and changes exactly ONE variable from Gate 18B — the
+training source-selection policy (natural first-64 `≈25/21/17/1` → balanced
+`20/20/20/4`) — holding the pinned model, v2 representation/prompt, boundary
+objective, budget, target, parser, scoring, benchmark, and success policy
+byte-identical. One fresh fine-tune (`realckpt-3445b562ee6920c699170745`, parent
+`None`, loss `3.348996 → 0.000724`), matched base-vs-trained evaluation over the
+four predictors. The balanced corpus **substantially reduced the majority-class
+collapse**: the trained model emits three of four families (was two), the dominant
+family fell `184 → 138`, held-out **neighbor-removal recall recovered `0 → 3/3`**,
+**macro accuracy doubled `0.333 → 0.667`**, micro rose `3/36 → 6/36`, and overall
+accepted accuracy rose `93/206 = 0.451 → 139/206 = 0.675` (outcome `improved`, zero
+paired regressions). The imbalance hypothesis is confirmed for every family the
+frozen split covers; **remote-AS mismatch stayed `0/30`** because the split gives
+it only four train examples and the firewall forbids importing more — a coverage
+limit, not a learner limit (the four-flag oracle still scores it perfectly).
+Sources fingerprinted byte-identical; test-set firewall passed; strictly offline;
+generated artifacts live outside the repo and are not committed. Prior outcomes
+(Gate 15/16B `unchanged`, 17B `mixed`, 18B `improved`) are not reinterpreted. The
+evidence-based Gate 20 direction is to add remote-AS train coverage via an
+append-only corpus/split campaign (ADR-0031), not a model or representation change.
+See `architecture/gate19/family-balanced-experiment.md`.
 Layers beyond are **planned, not
 implemented** — no prompt optimization, RAG,
 GraphRAG, agent, memory, or persistent workflow exists yet. The deterministic

@@ -126,8 +126,13 @@ Gate 19A ships the selection policy, the selection result, the corpus-builder
 integration, the comparison, and the test tiers. It builds no fine-tuned
 checkpoint and binds no experiment. Gate 19B — the preregistered one-run
 experiment that binds the balanced corpus under the otherwise-frozen Gate 18B
-controls, with a matched base-vs-trained evaluation — remains unstarted. Its
-result will test whether balancing removes the collapse (implicating imbalance /
-optimization) or not (implicating field-to-label binding or capacity for a later
-gate). No accuracy claim is made here. See ADR-0037 and
+controls, with a matched base-vs-trained evaluation — is complete. It confirmed
+the imbalance hypothesis for every family the frozen split covers adequately:
+neighbor-removal held-out recall recovered `0 → 3/3`, macro accuracy doubled
+`0.333 → 0.667`, prediction diversity rose from two to three families, and overall
+accepted accuracy rose `0.451 → 0.675` — all from changing only which 64 sources
+were trained on (outcome `improved`). The one family balancing could not reach,
+remote-AS mismatch, is limited by split-scarce coverage the firewall forbids
+topping up (four train examples), not by the learner. See
+`architecture/gate19/family-balanced-experiment.md`, ADR-0037, and
 `architecture/gate18/discriminative-evidence-experiment.md`.
