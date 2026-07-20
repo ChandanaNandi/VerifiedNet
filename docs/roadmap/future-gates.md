@@ -1,5 +1,15 @@
 # VerifiedNet — Roadmap (Future Gates)
 
+> **Research program complete (Final Research Closure Gate).** All planned controlled
+> experiments (Gates 15–20C) are finished and verified. The terminal scientific record is
+> [`../research/final-research-summary.md`](../research/final-research-summary.md): boundary
+> alignment solved structured-output failure (Gate 17), observable-evidence representation
+> proved necessary (Gate 18), family imbalance explained most of the collapse (Gate 19), and
+> insufficient remote-AS coverage was falsified as the remaining explanation (Gate 20); the
+> residual limitation is consistent with field-to-label binding and/or model capacity under
+> the fixed constraints. Items below marked complete are historical; anything still marked
+> planned is **out of scope for this closed project** and would be new research.
+
 The platform is built in strict gates. Gates 0–3 are complete (offline architecture and
 contracts). Gate 4 is complete: the first live verified incidents (two-router FRR;
 accepted + precondition-rejected), canonical artifacts, run index, and a thin composition

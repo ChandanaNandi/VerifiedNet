@@ -445,9 +445,35 @@ a bounded campaign plan (retries never add coverage), an append-only v4 contract
 are all proven offline and against the real v3 chain. **No scenario, run, dataset,
 corpus, experiment, or model artifact — that is Gate 20B/20C.** See
 `architecture/gate20/remoteas-expansion-contracts.md` and ADR-0038.
-Layers beyond are **planned, not
+Gate 20B (verified remote-AS run campaign + append-only v4 registration) executed the
+Gate 20A plan on the real FRR lab: 8/8 verified TRAIN groups, 16/16 accepted examples,
+0 rejected, 0 retries (`rascamp-2241256ebcd32c6c`); every accepted run's projected
+`group_id` was verified to equal its planned identity. It registered an append-only v4
+prepared chain (`eaddf66f…` → `3207fada…`) with all 230 v3 rows byte-identical, 16 TRAIN
+examples appended, and every held-out partition unchanged — lifting remote-AS TRAIN
+coverage from one group / four examples to nine groups / twenty examples; readiness
+`rasready-faf453da2f2dae61` passes all nine checks. **No model artifact.** See
+`architecture/gate20/remoteas-campaign.md`.
+Gate 20C (remote-AS coverage controlled experiment) is the terminal preregistered one-run
+experiment (ADR-0033): exactly one variable changed from Gate 19B — the source-selection
+policy → group-aware `gbsel-6c88212e4542dc3b` (16/16/16/16, remote-AS spanning all 9
+verified TRAIN groups). Operational result (`exp-71ad7144049373a3`, checkpoint
+`realckpt-beeca94dabe078e37cce019b`, parent None, loss `3.295592 → 0.000075`): validity
+held `230/230`, but held-out remote-AS recall stayed **`0/30`** — the coverage hypothesis
+is **falsified**; the model still collapses remote-AS onto `iface_admin_shutdown`. The
+budget-preserving 20→16 reduction of the abundant families cost neighbor-removal
+(`3/3 → 0/3`), so macro fell `0.667 → 0.333` and micro `6/36 → 3/36` versus Gate 19B;
+frozen outcome `improved` (paired vs the invalid base). The residual limitation is
+consistent with field-to-label binding and/or model capacity under the fixed constraints.
+See `architecture/gate20/remoteas-coverage-experiment.md`.
+
+**The VerifiedNet research program is complete (Final Research Closure Gate).** All
+planned controlled experiments (Gates 15–20C) are finished and verified; the terminal
+scientific record is `research/final-research-summary.md`. No new experiment, model,
+corpus, objective, feature policy, prompt, or data is introduced at closure, and no prior
+frozen outcome is reinterpreted. Layers beyond are **planned, not
 implemented** — no prompt optimization, RAG,
-GraphRAG, agent, memory, or persistent workflow exists yet. The deterministic
+GraphRAG, agent, memory, or persistent workflow exists. The deterministic
 trust core (labs →
 faults → evidence → verification → oracle → incidents → recovery → artifacts → index) is
 fixed and is never replaced by a model. See `architecture/gate3/limitations.md`.
