@@ -117,6 +117,16 @@ adequately-covered remote-AS still fails should Gate 20+ turn to objective/bindi
 or model-capacity variables. Do not change the feature policy (the oracle proves
 it sufficient) or increase epochs/data blindly.
 
+**Follow-up (Gate 20).** The Gate 20 design confirmed the deficit is one TRAIN
+remote-AS group (four repeated runs) vs ~10 for the other families, and split the
+work into 20A (expansion contracts, no runs), 20B (verified run campaign +
+append-only v4), and 20C (one experiment). Gate 20A is complete: it derives ≥ 8
+unused, approved, TRAIN-assigned remote-AS identities disjoint from all 22 frozen
+groups (reproducing every frozen `group_id` from the production identity
+functions), with a fail-closed leakage firewall, a bounded campaign plan, and an
+append-only v4 contract — no runs. See
+`architecture/gate20/remoteas-expansion-contracts.md` and ADR-0038.
+
 ## Scope
 
 The training source-selection policy is the sole independent variable. No model,

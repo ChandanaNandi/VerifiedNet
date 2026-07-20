@@ -427,6 +427,24 @@ generated artifacts live outside the repo and are not committed. Prior outcomes
 evidence-based Gate 20 direction is to add remote-AS train coverage via an
 append-only corpus/split campaign (ADR-0031), not a model or representation change.
 See `architecture/gate19/family-balanced-experiment.md`.
+Gate 20A (remote-AS expansion contracts) implements — CONTRACTS ONLY, no runs —
+the append-only remote-AS training-coverage campaign that Gate 20B will execute and
+Gate 20C will experiment on (ADR-0038). Gate 19B's remaining `0/30` remote-AS gap
+is a one-TRAIN-group deficit: the frozen v3 split gives remote-AS one train group
+(four repeated runs) vs ~10 for the other families, because the deterministic
+splitter bucketed its 22 registered identities mostly to val/test. The remote-AS
+identity space is 6 approved topologies × 10 approved RAS cases = 60 candidates, of
+which v3 used 22; Gate 20A selects **unused** approved `(topology, case)`
+combinations whose production `group_id` is disjoint from every frozen group and
+deterministically TRAIN-assigned by the frozen split policy, deriving ≥ 8
+independent new TRAIN groups (≥ 16 intended examples) that reproduce every frozen
+remote-AS `group_id` from the production identity functions. A fail-closed leakage
+firewall (unique, disjoint, canonical-identity, TRAIN-only, independent-groups),
+a bounded campaign plan (retries never add coverage), an append-only v4 contract
+(v3 rows/held-out byte-unchanged; lineage → v3), and a coverage readiness preview
+are all proven offline and against the real v3 chain. **No scenario, run, dataset,
+corpus, experiment, or model artifact — that is Gate 20B/20C.** See
+`architecture/gate20/remoteas-expansion-contracts.md` and ADR-0038.
 Layers beyond are **planned, not
 implemented** — no prompt optimization, RAG,
 GraphRAG, agent, memory, or persistent workflow exists yet. The deterministic

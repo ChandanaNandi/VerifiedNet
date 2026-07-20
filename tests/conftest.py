@@ -2527,3 +2527,32 @@ def balanced_prepared():
 
     build.example = _ex  # expose the factory for failure-case construction
     return build
+
+
+@pytest.fixture
+def remoteas_pool():
+    """Build a synthetic pool of distinct remote-AS candidate identities for
+    Gate 20A offline tests. Distinct parameters yield distinct production
+    group_ids (~80% TRAIN under the gate6 split), so >= 8 TRAIN candidates exist
+    without touching the live catalog (which the gated proof reads)."""
+    from verifiednet.experiment.remoteas_expansion import (
+        APPROVED_REMOTEAS_CASE_IDS,
+        APPROVED_TOPOLOGY_IDS,
+        RemoteAsCandidate,
+        remoteas_identity,
+    )
+
+    def build(n=40, backend="frr-compose"):
+        pool = []
+        for i in range(n):
+            ident = remoteas_identity(
+                scenario_id=f"bgp-remote-as-mismatch-syn-{i}",
+                target_node="router_a", target_session="a-b",
+                parameters={"wrong_asn": 65000 + i},
+                topology_hash=f"{i % 6}" + "a" * 63, backend=backend)
+            pool.append(RemoteAsCandidate(
+                case_id=APPROVED_REMOTEAS_CASE_IDS[i % 10],
+                topology_id=APPROVED_TOPOLOGY_IDS[i % 6], identity=ident))
+        return tuple(pool)
+
+    return build
